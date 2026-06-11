@@ -1,0 +1,27 @@
+name: Sync World Cup Results
+
+on:
+  schedule:
+    # Daily after the North America evening match window has normally finished.
+    - cron: "30 10 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-results:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Sync results to Neon
+        run: npm run sync:results
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESULTS_API_URL: ${{ secrets.RESULTS_API_URL }}
+          RESULTS_API_KEY: ${{ secrets.RESULTS_API_KEY }}

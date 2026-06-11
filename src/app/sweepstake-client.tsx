@@ -6,17 +6,20 @@ import {
   CheckCircle2,
   CircleDotDashed,
   Crown,
+  Moon,
   RefreshCw,
   Shield,
   Sparkles,
+  Sun,
   Trophy,
   Users
 } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import type { AppState, Draw, Fixture, Pot, Team } from "@/lib/types";
 
 type Tab = "draw" | "pools" | "fixtures" | "results";
+type Theme = "night" | "light";
 type SweepstakeClientProps = {
   token?: string;
   initialState?: AppState;
@@ -24,17 +27,71 @@ type SweepstakeClientProps = {
   initialTab?: Tab;
 };
 
-function pointsFor(team: Team) {
-  if (!team.finalRank) return 0;
-  if (team.finalRank === 1) return 100;
-  if (team.finalRank === 2) return 75;
-  if (team.finalRank === 3) return 60;
-  if (team.finalRank === 4) return 50;
-  if (team.finalRank <= 8) return 35;
-  if (team.finalRank <= 16) return 20;
-  if (team.finalRank <= 32) return 10;
-  return 0;
-}
+const PRIZE_POOL = 600;
+const PAYOUTS = {
+  champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
+  runnerUp: { label: "2nd Place", percent: 30, amount: PRIZE_POOL * 0.3 },
+  woodenSpoon: { label: "Wooden Spoon", percent: 10, amount: PRIZE_POOL * 0.1 }
+};
+
+type TeamWatch = {
+  draw: Draw;
+  todayFixture: Fixture | null;
+  nextFixture: Fixture | null;
+};
+
+const FLAG_CODES: Record<string, string> = {
+  Spain: "es",
+  France: "fr",
+  Argentina: "ar",
+  Brazil: "br",
+  England: "gb-eng",
+  Portugal: "pt",
+  Germany: "de",
+  Netherlands: "nl",
+  Belgium: "be",
+  Uruguay: "uy",
+  Morocco: "ma",
+  Colombia: "co",
+  Croatia: "hr",
+  Switzerland: "ch",
+  Norway: "no",
+  Japan: "jp",
+  Mexico: "mx",
+  "United States": "us",
+  Sweden: "se",
+  "Türkiye": "tr",
+  Senegal: "sn",
+  Egypt: "eg",
+  Ecuador: "ec",
+  Paraguay: "py",
+  Austria: "at",
+  Czechia: "cz",
+  "Korea Republic": "kr",
+  Iran: "ir",
+  Australia: "au",
+  "Cote d'Ivoire": "ci",
+  "Côte d'Ivoire": "ci",
+  Ghana: "gh",
+  Tunisia: "tn",
+  Algeria: "dz",
+  Canada: "ca",
+  Qatar: "qa",
+  "Saudi Arabia": "sa",
+  "Bosnia and Herzegovina": "ba",
+  Scotland: "gb-sct",
+  "South Africa": "za",
+  "DR Congo": "cd",
+  Panama: "pa",
+  "New Zealand": "nz",
+  Iraq: "iq",
+  Jordan: "jo",
+  Uzbekistan: "uz",
+  "Cape Verde": "cv",
+  Haiti: "ht",
+  Curacao: "cw",
+  "Curaçao": "cw"
+};
 
 function statusFor(team: Team) {
   if (!team.finalRank) return "Active";
@@ -62,6 +119,116 @@ function groupByDate(fixtures: Fixture[]) {
   }, {});
 }
 
+function formatPrize(amount: number) {
+  return `RM${amount.toLocaleString("en-MY")}`;
+}
+
+function getPrizeWinners(draws: Draw[]) {
+  const champion = draws.find((draw) => draw.team.finalRank === 1) ?? null;
+  const runnerUp = draws.find((draw) => draw.team.finalRank === 2) ?? null;
+  const finishedDraws = draws.filter((draw) => typeof draw.team.finalRank === "number");
+  const worstRank = finishedDraws.length
+    ? Math.max(...finishedDraws.map((draw) => draw.team.finalRank ?? 0))
+    : null;
+  const woodenSpoons = worstRank
+    ? finishedDraws.filter((draw) => draw.team.finalRank === worstRank)
+    : [];
+
+  return { champion, runnerUp, woodenSpoons, worstRank };
+}
+
+function payoutLabelsForParticipant(name: string, winners: ReturnType<typeof getPrizeWinners>) {
+  const labels: string[] = [];
+
+  if (winners.champion?.participantName === name) {
+    labels.push(`${PAYOUTS.champion.label} ${formatPrize(PAYOUTS.champion.amount)}`);
+  }
+
+  if (winners.runnerUp?.participantName === name) {
+    labels.push(`${PAYOUTS.runnerUp.label} ${formatPrize(PAYOUTS.runnerUp.amount)}`);
+  }
+
+  if (winners.woodenSpoons.some((draw) => draw.participantName === name)) {
+    const splitAmount = PAYOUTS.woodenSpoon.amount / winners.woodenSpoons.length;
+    labels.push(`${PAYOUTS.woodenSpoon.label} ${formatPrize(splitAmount)}`);
+  }
+
+  return labels;
+}
+
+function flagUrlFor(country: string) {
+  const code = FLAG_CODES[country];
+  return code ? `https://flagcdn.com/${code}.svg` : null;
+}
+
+function countryFallback(country: string) {
+  return country
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function localDateKey(value: string | Date) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function fixtureHasCountry(fixture: Fixture, country: string) {
+  return fixture.homeCountry === country || fixture.awayCountry === country;
+}
+
+function fixtureOpponent(fixture: Fixture, country: string) {
+  const isHome = fixture.homeCountry === country;
+  return {
+    opponentCountry: isHome ? fixture.awayCountry : fixture.homeCountry,
+    opponentOwner: isHome ? fixture.awayOwner : fixture.homeOwner,
+    myScore: isHome ? fixture.homeScore : fixture.awayScore,
+    opponentScore: isHome ? fixture.awayScore : fixture.homeScore
+  };
+}
+
+function buildTeamWatch(draws: Draw[], fixtures: Fixture[]) {
+  const today = localDateKey(new Date());
+  const now = Date.now();
+
+  return draws.map((draw): TeamWatch => {
+    const teamFixtures = fixtures
+      .filter((fixture) => fixtureHasCountry(fixture, draw.team.country))
+      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+    const todayFixture =
+      teamFixtures.find((fixture) => localDateKey(fixture.kickoff) === today) ?? null;
+    const nextFixture =
+      teamFixtures.find((fixture) => new Date(fixture.kickoff).getTime() >= now) ?? null;
+
+    return { draw, todayFixture, nextFixture };
+  });
+}
+
+function teamTournamentStatus(team: Team) {
+  if (!team.finalRank) {
+    return { label: "Active", tone: "active" };
+  }
+
+  if (team.finalRank === 1) {
+    return { label: "Champion", tone: "winner" };
+  }
+
+  if (team.finalRank === 2) {
+    return { label: "Runner-up", tone: "winner" };
+  }
+
+  return {
+    label: `Eliminated${team.eliminatedStage ? ` - ${team.eliminatedStage}` : ""}`,
+    tone: "out"
+  };
+}
+
 export default function SweepstakeClient({
   token = "",
   initialState = undefined,
@@ -72,6 +239,7 @@ export default function SweepstakeClient({
   const [tab, setTab] = useState<Tab>(initialTab);
   const [drawingPot, setDrawingPot] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [theme, setTheme] = useState<Theme>("night");
 
   async function loadState() {
     if (demoMode || !token) return;
@@ -95,6 +263,23 @@ export default function SweepstakeClient({
     return () => window.clearInterval(interval);
   }, [demoMode, token]);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem("sweepstake-theme");
+    if (saved === "light" || saved === "night") {
+      setTheme(saved);
+      return;
+    }
+
+    if (window.matchMedia("(prefers-color-scheme: light)").matches) {
+      setTheme("light");
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("sweepstake-theme", theme);
+  }, [theme]);
+
   async function drawPot(pot: Pot) {
     if (demoMode) {
       setMessage("Demo mode is pre-filled. Use a private invite link for the real live draw.");
@@ -116,7 +301,7 @@ export default function SweepstakeClient({
       return;
     }
 
-    setMessage(`${payload.draw.team.flag} ${payload.draw.team.country} is yours.`);
+    setMessage(`${payload.draw.team.country} is yours.`);
     await loadState();
   }
 
@@ -129,13 +314,16 @@ export default function SweepstakeClient({
     return Array.from(rows.entries()).map(([name, draws]) => ({
       name,
       draws: draws.sort((a, b) => a.team.potId - b.team.potId),
-      score: draws.reduce((sum, draw) => sum + pointsFor(draw.team), 0),
       bestRank: Math.min(...draws.map((draw) => draw.team.finalRank ?? 99))
     }));
   }, [state]);
 
-  const championDraw = state?.allDraws.find((draw) => draw.team.finalRank === 1) ?? null;
+  const prizeWinners = useMemo(() => getPrizeWinners(state?.allDraws ?? []), [state]);
   const fixtureGroups = useMemo(() => groupByDate(state?.fixtures ?? []), [state]);
+  const myTeamWatch = useMemo(
+    () => buildTeamWatch(state?.myDraws ?? [], state?.fixtures ?? []),
+    [state]
+  );
 
   if (!state) {
     return (
@@ -167,6 +355,15 @@ export default function SweepstakeClient({
         <div className="trophy-mark">
           <Trophy aria-hidden="true" />
         </div>
+        <button
+          className="theme-toggle"
+          type="button"
+          aria-pressed={theme === "light"}
+          onClick={() => setTheme((current) => (current === "night" ? "light" : "night"))}
+        >
+          {theme === "night" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+          <span>{theme === "night" ? "Light" : "Night"}</span>
+        </button>
       </section>
 
       <nav className="tabs" aria-label="Sweepstake views">
@@ -190,47 +387,67 @@ export default function SweepstakeClient({
       {message && <p className="notice">{message}</p>}
 
       {tab === "draw" && (
-        <section className="draw-grid">
-          <div className="rules-panel">
-            <h2>Winner Logic</h2>
-            <p>
-              The office sweepstake winner is the participant who owns the World Cup champion.
-              The leaderboard is for bragging rights: champion 100, runner-up 75, third 60,
-              fourth 50, quarter-finalist 35, round-of-16 20, round-of-32 10.
-            </p>
-            <p>
-              {demoMode
-                ? "This preview uses sample draws and results only. It does not reserve any country."
-                : "The current list has 48 countries for 12 participants, so each person draws four teams. A five-team version needs 60 unique countries."}
-            </p>
-          </div>
-          {state.pots.map((pot) => {
-            const existing = state.myDraws.find((draw) => draw.team.potId === pot.id);
-            return (
-              <article className={clsx("draw-card", pot.colour)} key={pot.id}>
-                <div>
-                  <p className="eyebrow">{pot.name}</p>
-                  <h2>{pot.label}</h2>
-                  <p className="muted">
-                    {pot.available}/{pot.total} left
-                  </p>
-                </div>
-                {existing ? (
-                  <TeamTile team={existing.team} compact />
-                ) : (
-                  <button
-                    className="primary-button"
-                    onClick={() => drawPot(pot)}
-                    disabled={drawingPot === pot.id || drawnPotIds.has(pot.id) || pot.available === 0}
-                  >
-                    {drawingPot === pot.id ? <RefreshCw className="spin" /> : <Sparkles />}
-                    <span>Draw</span>
-                  </button>
-                )}
-              </article>
-            );
-          })}
-        </section>
+        <>
+          <section className="watch-panel">
+            <header>
+              <div>
+                <p className="eyebrow">My teams today</p>
+                <h2>Fixture and elimination watch</h2>
+              </div>
+              <span>{localDateKey(new Date())}</span>
+            </header>
+            <div className="watch-grid">
+              {myTeamWatch.length ? (
+                myTeamWatch.map((item) => <WatchCard key={item.draw.team.id} item={item} />)
+              ) : (
+                <p className="empty">Your teams will appear here after your draw.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="draw-grid">
+            <div className="rules-panel">
+              <h2>Winner Logic</h2>
+              <p>
+                RM600 prize pool: the participant holding the World Cup champion wins 60% (
+                {formatPrize(PAYOUTS.champion.amount)}), the participant holding the runner-up wins
+                30% ({formatPrize(PAYOUTS.runnerUp.amount)}), and the participant holding the worst
+                overall team wins 10% ({formatPrize(PAYOUTS.woodenSpoon.amount)}).
+              </p>
+              <p>
+                {demoMode
+                  ? "This preview uses sample draws and results only. It does not reserve any country."
+                  : "The current list has 48 countries for 12 participants, so each person draws four teams. A five-team version needs 60 unique countries."}
+              </p>
+            </div>
+            {state.pots.map((pot) => {
+              const existing = state.myDraws.find((draw) => draw.team.potId === pot.id);
+              return (
+                <article className={clsx("draw-card", pot.colour)} key={pot.id}>
+                  <div>
+                    <p className="eyebrow">{pot.name}</p>
+                    <h2>{pot.label}</h2>
+                    <p className="muted">
+                      {pot.available}/{pot.total} left
+                    </p>
+                  </div>
+                  {existing ? (
+                    <TeamTile team={existing.team} compact />
+                  ) : (
+                    <button
+                      className="primary-button"
+                      onClick={() => drawPot(pot)}
+                      disabled={drawingPot === pot.id || drawnPotIds.has(pot.id) || pot.available === 0}
+                    >
+                      {drawingPot === pot.id ? <RefreshCw className="spin" /> : <Sparkles />}
+                      <span>Draw</span>
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </section>
+        </>
       )}
 
       {tab === "pools" && (
@@ -239,7 +456,7 @@ export default function SweepstakeClient({
             <article className="pool-card" key={pool.name}>
               <header>
                 <h2>{pool.name}&apos;s Pool</h2>
-                <span>{pool.score} pts</span>
+                <span>{payoutLabelsForParticipant(pool.name, prizeWinners)[0] ?? `${pool.draws.length} teams`}</span>
               </header>
               <div className="team-list">
                 {pool.draws.length ? (
@@ -268,27 +485,51 @@ export default function SweepstakeClient({
 
       {tab === "results" && (
         <section className="results-board">
-          <article className="winner-panel">
-            <Crown aria-hidden="true" />
-            <div>
-              <p className="eyebrow">Sweepstake winner</p>
-              <h2>
-                {championDraw
-                  ? `${championDraw.participantName} wins with ${championDraw.team.country}`
-                  : "Pending World Cup champion"}
-              </h2>
-            </div>
-          </article>
+          <div className="prize-board">
+            <PrizeCard
+              icon={<Crown aria-hidden="true" />}
+              title="1st Place"
+              subtitle="Tournament Winner"
+              amount={formatPrize(PAYOUTS.champion.amount)}
+              percent={`${PAYOUTS.champion.percent}%`}
+              draw={prizeWinners.champion}
+            />
+            <PrizeCard
+              icon={<Trophy aria-hidden="true" />}
+              title="2nd Place"
+              subtitle="Runner-up"
+              amount={formatPrize(PAYOUTS.runnerUp.amount)}
+              percent={`${PAYOUTS.runnerUp.percent}%`}
+              draw={prizeWinners.runnerUp}
+            />
+            <PrizeCard
+              icon={<Shield aria-hidden="true" />}
+              title="Wooden Spoon"
+              subtitle="Worst team overall"
+              amount={formatPrize(PAYOUTS.woodenSpoon.amount)}
+              percent={`${PAYOUTS.woodenSpoon.percent}%`}
+              draw={prizeWinners.woodenSpoons[0] ?? null}
+              note={
+                prizeWinners.woodenSpoons.length > 1
+                  ? `${prizeWinners.woodenSpoons.length} teams tied - prize split`
+                  : undefined
+              }
+            />
+          </div>
           <div className="standings">
             {groupedDraws
-              .sort((a, b) => b.score - a.score || a.bestRank - b.bestRank || a.name.localeCompare(b.name))
-              .map((pool, index) => (
-                <article className="standing-row" key={pool.name}>
-                  <span>{index + 1}</span>
-                  <strong>{pool.name}</strong>
-                  <p>{pool.score} pts</p>
-                </article>
-              ))}
+              .sort((a, b) => a.bestRank - b.bestRank || a.name.localeCompare(b.name))
+              .map((pool) => {
+                const labels = payoutLabelsForParticipant(pool.name, prizeWinners);
+
+                return (
+                  <article className={clsx("standing-row", labels.length && "has-prize")} key={pool.name}>
+                    <strong>{pool.name}</strong>
+                    <span>{labels.join(" + ") || "No prize yet"}</span>
+                    <p>Best finish #{pool.bestRank === 99 ? "-" : pool.bestRank}</p>
+                  </article>
+                );
+              })}
           </div>
           <div className="result-teams">
             {state.teams.map((team) => (
@@ -301,13 +542,122 @@ export default function SweepstakeClient({
   );
 }
 
+function PrizeCard({
+  icon,
+  title,
+  subtitle,
+  amount,
+  percent,
+  draw,
+  note
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  amount: string;
+  percent: string;
+  draw: Draw | null;
+  note?: string;
+}) {
+  return (
+    <article className={clsx("prize-card", !draw && "pending")}>
+      <div className="prize-icon">{icon}</div>
+      <div>
+        <p className="eyebrow">{title}</p>
+        <h2>{amount}</h2>
+        <strong>
+          {draw ? `${draw.participantName} - ${draw.team.country}` : "Pending result"}
+        </strong>
+        <span>
+          {percent} - {subtitle}
+          {note ? ` - ${note}` : ""}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function WatchCard({ item }: { item: TeamWatch }) {
+  const status = teamTournamentStatus(item.draw.team);
+  const fixture = item.todayFixture ?? item.nextFixture;
+  const fixtureLabel = item.todayFixture ? "Today" : item.nextFixture ? "Next match" : "No fixture";
+  const opponent = fixture ? fixtureOpponent(fixture, item.draw.team.country) : null;
+  const kickoff = fixture
+    ? new Intl.DateTimeFormat("en-GB", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(fixture.kickoff))
+    : null;
+
+  return (
+    <article className="watch-card">
+      <div className="watch-team">
+        <FlagBadge team={item.draw.team} />
+        <div>
+          <strong>{item.draw.team.country}</strong>
+          <span>{item.draw.team.potLabel}</span>
+        </div>
+      </div>
+      <span className={clsx("status-pill", status.tone)}>{status.label}</span>
+      {fixture && opponent ? (
+        <div className="watch-fixture">
+          <p className="eyebrow">{fixtureLabel}</p>
+          <strong>
+            vs {opponent.opponentCountry} ({opponent.opponentOwner ?? "Unclaimed"})
+          </strong>
+          <span>
+            {kickoff} - {fixture.venue}
+            {opponent.myScore !== null && opponent.opponentScore !== null
+              ? ` - ${opponent.myScore}-${opponent.opponentScore}`
+              : ""}
+          </span>
+        </div>
+      ) : (
+        <div className="watch-fixture muted">
+          <p className="eyebrow">Today</p>
+          <strong>No match today</strong>
+          <span>Check Fixtures for the full schedule.</span>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function CountryFlag({
+  country,
+  fallback
+}: {
+  country: string;
+  fallback: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const flagUrl = flagUrlFor(country);
+
+  return (
+    <div className="flag" aria-label={`${country} flag`}>
+      {flagUrl && !failed ? (
+        <img src={flagUrl} alt="" onError={() => setFailed(true)} loading="lazy" />
+      ) : (
+        <span className="flag-fallback">{fallback}</span>
+      )}
+    </div>
+  );
+}
+
+function FlagBadge({ team }: { team: Team }) {
+  return <CountryFlag country={team.country} fallback={team.flag} />;
+}
+
 function TeamTile({ team, compact = false }: { team: Team; compact?: boolean }) {
   const status = statusFor(team);
   const below = status === "Below expectation";
 
   return (
     <article className={clsx("team-tile", compact && "compact", below && "dimmed")}>
-      <div className="flag">{team.flag}</div>
+      <FlagBadge team={team} />
       <div className="team-main">
         <strong>{team.country}</strong>
         <span>{team.potLabel}</span>
@@ -345,8 +695,10 @@ function FixtureRow({ fixture }: { fixture: Fixture }) {
     <div className="fixture-row">
       <span>{kickoff}</span>
       <strong>
+        <CountryFlag country={fixture.homeCountry} fallback={countryFallback(fixture.homeCountry)} />
         {fixture.homeCountry} {fixture.homeScore ?? ""} vs {fixture.awayScore ?? ""}{" "}
         {fixture.awayCountry}
+        <CountryFlag country={fixture.awayCountry} fallback={countryFallback(fixture.awayCountry)} />
       </strong>
       <p>
         {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} - {fixture.venue}
