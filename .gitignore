@@ -1,0 +1,9 @@
+.next
+node_modules
+.env
+.env*.local
+invite-links.txt
+*.log
+vercel-env.txt
+.vercel
+tsconfig.tsbuildinfo
