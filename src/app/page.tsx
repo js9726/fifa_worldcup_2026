@@ -24,7 +24,7 @@ export default function HomePage() {
             View demo
           </Link>
           <Link href="/admin" className="text-link">
-            Admin results
+            Admin overview
           </Link>
         </div>
       </section>

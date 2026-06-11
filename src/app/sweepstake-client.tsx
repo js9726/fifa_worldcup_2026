@@ -24,6 +24,7 @@ type SweepstakeClientProps = {
   token?: string;
   initialState?: AppState;
   demoMode?: boolean;
+  adminOverview?: boolean;
   initialTab?: Tab;
 };
 
@@ -233,6 +234,7 @@ export default function SweepstakeClient({
   token = "",
   initialState = undefined,
   demoMode = false,
+  adminOverview = false,
   initialTab = "draw"
 }: SweepstakeClientProps) {
   const [state, setState] = useState<AppState | null>(initialState ?? null);
@@ -242,11 +244,11 @@ export default function SweepstakeClient({
   const [theme, setTheme] = useState<Theme>("night");
 
   async function loadState() {
-    if (demoMode || !token) return;
+    if (demoMode) return;
+    if (!adminOverview && !token) return;
 
-    const response = await fetch(`/api/state?token=${encodeURIComponent(token)}`, {
-      cache: "no-store"
-    });
+    const url = adminOverview ? "/api/state" : `/api/state?token=${encodeURIComponent(token)}`;
+    const response = await fetch(url, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) {
       setMessage(payload.error ?? "Unable to load invite");
@@ -256,12 +258,13 @@ export default function SweepstakeClient({
   }
 
   useEffect(() => {
-    if (demoMode || !token) return;
+    if (demoMode) return;
+    if (!adminOverview && !token) return;
 
     loadState();
     const interval = window.setInterval(loadState, 12000);
     return () => window.clearInterval(interval);
-  }, [demoMode, token]);
+  }, [demoMode, token, adminOverview]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("sweepstake-theme");
@@ -343,13 +346,21 @@ export default function SweepstakeClient({
       <section className="topbar">
         <div>
           <p className="eyebrow">
-            {demoMode ? "Demo preview" : "Our World Cup 2026 Pools"}
+            {demoMode ? "Demo preview" : adminOverview ? "Organiser overview" : "Our World Cup 2026 Pools"}
           </p>
-          <h1>{demoMode ? "Sweepstake demo" : `${state.participant?.name}'s live draw`}</h1>
+          <h1>
+            {demoMode
+              ? "Sweepstake demo"
+              : adminOverview
+                ? "All pools overview"
+                : `${state.participant?.name}'s live draw`}
+          </h1>
           <p className="subcopy">
             {demoMode
               ? "Pre-filled example with live board, fixtures, rankings and result logic."
-              : `${state.allDraws.length}/48 countries claimed. Neon locks every country once.`}
+              : adminOverview
+                ? `${state.allDraws.length}/${state.teams.length} countries claimed across ${state.participants.length} players.`
+                : `${state.allDraws.length}/48 countries claimed. Neon locks every country once.`}
           </p>
         </div>
         <div className="trophy-mark">
@@ -368,7 +379,7 @@ export default function SweepstakeClient({
 
       <nav className="tabs" aria-label="Sweepstake views">
         {[
-          ["draw", Sparkles, "Draw"],
+          ...(adminOverview ? [] : [["draw", Sparkles, "Draw"]]),
           ["pools", Users, "Pools"],
           ["fixtures", CalendarDays, "Fixtures"],
           ["results", Trophy, "Results"]

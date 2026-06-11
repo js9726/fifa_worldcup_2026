@@ -730,6 +730,40 @@ button {
   grid-column: 1 / -1;
 }
 
+.admin-gate {
+  display: grid;
+  gap: 14px;
+  width: min(420px, 100%);
+  margin-top: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--topbar-bg);
+  box-shadow: var(--shadow);
+}
+
+.admin-gate label {
+  display: grid;
+  gap: 7px;
+  color: var(--gold);
+  font-weight: 800;
+}
+
+.admin-gate input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  background: rgba(3, 7, 12, 0.82);
+}
+
+.admin-results {
+  padding-top: 0;
+  border-top: 1px solid var(--line);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
