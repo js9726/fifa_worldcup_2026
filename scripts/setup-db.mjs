@@ -83,6 +83,7 @@ await sql.begin(async (tx) => {
   await tx`
     create table if not exists fixtures (
       id serial primary key,
+      external_id bigint unique,
       kickoff timestamptz not null,
       stage text not null,
       home_country text not null,
