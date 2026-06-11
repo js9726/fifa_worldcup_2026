@@ -17,6 +17,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { AppState, Draw, Fixture, Pot, Team } from "@/lib/types";
 
 type Tab = "draw" | "pools" | "fixtures" | "results";
+type SweepstakeClientProps = {
+  token?: string;
+  initialState?: AppState;
+  demoMode?: boolean;
+  initialTab?: Tab;
+};
 
 function pointsFor(team: Team) {
   if (!team.finalRank) return 0;
@@ -56,13 +62,20 @@ function groupByDate(fixtures: Fixture[]) {
   }, {});
 }
 
-export default function SweepstakeClient({ token }: { token: string }) {
-  const [state, setState] = useState<AppState | null>(null);
-  const [tab, setTab] = useState<Tab>("draw");
+export default function SweepstakeClient({
+  token = "",
+  initialState = undefined,
+  demoMode = false,
+  initialTab = "draw"
+}: SweepstakeClientProps) {
+  const [state, setState] = useState<AppState | null>(initialState ?? null);
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [drawingPot, setDrawingPot] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   async function loadState() {
+    if (demoMode || !token) return;
+
     const response = await fetch(`/api/state?token=${encodeURIComponent(token)}`, {
       cache: "no-store"
     });
@@ -75,12 +88,19 @@ export default function SweepstakeClient({ token }: { token: string }) {
   }
 
   useEffect(() => {
+    if (demoMode || !token) return;
+
     loadState();
     const interval = window.setInterval(loadState, 12000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [demoMode, token]);
 
   async function drawPot(pot: Pot) {
+    if (demoMode) {
+      setMessage("Demo mode is pre-filled. Use a private invite link for the real live draw.");
+      return;
+    }
+
     setDrawingPot(pot.id);
     setMessage(`Drawing ${pot.label}...`);
     const response = await fetch("/api/draw", {
@@ -134,10 +154,14 @@ export default function SweepstakeClient({ token }: { token: string }) {
     <main className="shell">
       <section className="topbar">
         <div>
-          <p className="eyebrow">Our World Cup 2026 Pools</p>
-          <h1>{state.participant?.name}&apos;s live draw</h1>
+          <p className="eyebrow">
+            {demoMode ? "Demo preview" : "Our World Cup 2026 Pools"}
+          </p>
+          <h1>{demoMode ? "Sweepstake demo" : `${state.participant?.name}'s live draw`}</h1>
           <p className="subcopy">
-            {state.allDraws.length}/48 countries claimed. Neon locks every country once.
+            {demoMode
+              ? "Pre-filled example with live board, fixtures, rankings and result logic."
+              : `${state.allDraws.length}/48 countries claimed. Neon locks every country once.`}
           </p>
         </div>
         <div className="trophy-mark">
@@ -175,8 +199,9 @@ export default function SweepstakeClient({ token }: { token: string }) {
               fourth 50, quarter-finalist 35, round-of-16 20, round-of-32 10.
             </p>
             <p>
-              The current list has 48 countries for 12 participants, so each person draws four
-              teams. A five-team version needs 60 unique countries.
+              {demoMode
+                ? "This preview uses sample draws and results only. It does not reserve any country."
+                : "The current list has 48 countries for 12 participants, so each person draws four teams. A five-team version needs 60 unique countries."}
             </p>
           </div>
           {state.pots.map((pot) => {
@@ -324,7 +349,7 @@ function FixtureRow({ fixture }: { fixture: Fixture }) {
         {fixture.awayCountry}
       </strong>
       <p>
-        {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} · {fixture.venue}
+        {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} - {fixture.venue}
       </p>
     </div>
   );

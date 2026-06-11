@@ -9,7 +9,9 @@ export default function HomePage() {
           <p className="eyebrow">Invite-only live draw</p>
           <h1>World Cup 2026 Pools</h1>
         </div>
-        <Trophy aria-hidden="true" />
+        <div className="trophy-mark">
+          <Trophy aria-hidden="true" />
+        </div>
       </section>
       <section className="home-panel">
         <h2>Private sweepstake dashboard</h2>
@@ -17,9 +19,14 @@ export default function HomePage() {
           Open your personal invite link to draw your countries. Every draw is stored in Neon and
           each country can only be claimed once.
         </p>
-        <Link href="/admin" className="text-link">
-          Admin results
-        </Link>
+        <div className="home-actions">
+          <Link href="/demo" className="primary-button">
+            View demo
+          </Link>
+          <Link href="/admin" className="text-link">
+            Admin results
+          </Link>
+        </div>
       </section>
     </main>
   );
