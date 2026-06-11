@@ -5,6 +5,7 @@ import postgres from "postgres";
 
 const root = process.cwd();
 const SELFTEST = process.argv.includes("--selftest");
+const DRY_RUN = process.argv.includes("--dry-run");
 
 // ---------------------------------------------------------------------------
 // Country name mapping: football-data.org -> our DB country names.
@@ -43,6 +44,7 @@ const ALIASES = {
   turkey: "Türkiye",
   turkiye: "Türkiye",
   "cabo verde": "Cape Verde",
+  "cape verde islands": "Cape Verde",
   usa: "United States",
   "united states of america": "United States",
   "congo dr": "DR Congo",
@@ -251,14 +253,14 @@ const token = process.env.FOOTBALL_DATA_TOKEN;
 const competition = process.env.FOOTBALL_DATA_COMP || "WC";
 const apiBase = "https://api.football-data.org/v4";
 
-if (!databaseUrl) {
-  console.error("DATABASE_URL is required.");
-  process.exit(1);
-}
-
 if (!token) {
   console.log("FOOTBALL_DATA_TOKEN is not set. Skipping result sync without changing Neon.");
   process.exit(0);
+}
+
+if (!DRY_RUN && !databaseUrl) {
+  console.error("DATABASE_URL is required.");
+  process.exit(1);
 }
 
 const matchesRaw = await fetchJson(`${apiBase}/competitions/${competition}/matches`);
@@ -307,6 +309,22 @@ if (unmatchedNames.size) {
 }
 
 const placements = computePlacements(matches, stats);
+
+if (DRY_RUN) {
+  const byStatus = {};
+  for (const m of matches) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;
+  const resolved = matches.filter((m) => m.home && m.away).length;
+  console.log(`[dry-run] competition ${competition}: ${matches.length} matches`, byStatus);
+  console.log(`[dry-run] ${resolved}/${matches.length} matches have both teams resolved to our DB`);
+  console.log(`[dry-run] ${stats.size}/48 teams found in standings`);
+  console.log(`[dry-run] ${placements.size}/48 teams would be placed (final_rank):`);
+  for (const [country, place] of [...placements].sort((a, b) => a[1].finalRank - b[1].finalRank)) {
+    console.log(`   #${place.finalRank}  ${country}  (${place.stage})`);
+  }
+  console.log(unmatchedNames.size ? `[dry-run] UNMATCHED: ${[...unmatchedNames].join(", ")}` : "[dry-run] all team names matched ✓");
+  console.log("[dry-run] no database changes were made.");
+  process.exit(0);
+}
 
 const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
 let fixturesTouched = 0;
