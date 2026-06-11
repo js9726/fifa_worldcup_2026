@@ -17,7 +17,9 @@ jobs:
           node-version: "22"
           cache: "npm"
 
-      - run: npm ci
+      # Lenient install (not `npm ci`): the repo's lock file is missing some
+      # platform-optional transitive deps, and this job only needs `postgres`.
+      - run: npm install --no-audit --no-fund
 
       - name: Sync results to Neon
         run: npm run sync:results
