@@ -290,6 +290,17 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
           : null
 }));
 
+const statusCounts = matches.reduce((acc, match) => {
+  acc[match.status] = (acc[match.status] ?? 0) + 1;
+  return acc;
+}, {});
+const resolvedMatchCount = matches.filter((match) => match.home && match.away).length;
+const fullTimeScoreCount = matches.filter((match) => match.homeScore !== null && match.awayScore !== null).length;
+const finishedMatchCount = matches.filter((match) => match.status === "FINISHED").length;
+const finishedWithScoreCount = matches.filter(
+  (match) => match.status === "FINISHED" && match.homeScore !== null && match.awayScore !== null
+).length;
+
 const stats = new Map();
 for (const standing of standingsRaw.standings ?? []) {
   if (standing.type && standing.type !== "TOTAL") continue;
@@ -311,11 +322,11 @@ if (unmatchedNames.size) {
 const placements = computePlacements(matches, stats);
 
 if (DRY_RUN) {
-  const byStatus = {};
-  for (const m of matches) byStatus[m.status] = (byStatus[m.status] ?? 0) + 1;
-  const resolved = matches.filter((m) => m.home && m.away).length;
-  console.log(`[dry-run] competition ${competition}: ${matches.length} matches`, byStatus);
-  console.log(`[dry-run] ${resolved}/${matches.length} matches have both teams resolved to our DB`);
+  console.log(`[dry-run] competition ${competition}: ${matches.length} matches`, statusCounts);
+  console.log(`[dry-run] ${resolvedMatchCount}/${matches.length} matches have both teams resolved to our DB`);
+  console.log(
+    `[dry-run] ${fullTimeScoreCount}/${matches.length} matches currently have full-time scores; ${finishedWithScoreCount}/${finishedMatchCount} finished matches have scores`
+  );
   console.log(`[dry-run] ${stats.size}/48 teams found in standings`);
   console.log(`[dry-run] ${placements.size}/48 teams would be placed (final_rank):`);
   for (const [country, place] of [...placements].sort((a, b) => a[1].finalRank - b[1].finalRank)) {
@@ -326,7 +337,12 @@ if (DRY_RUN) {
   process.exit(0);
 }
 
-const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
+console.log(`football-data.org ${competition}: ${matches.length} match(es)`, statusCounts);
+console.log(
+  `${resolvedMatchCount}/${matches.length} match(es) resolved to local teams; ${fullTimeScoreCount}/${matches.length} have full-time scores; ${finishedWithScoreCount}/${finishedMatchCount} finished match(es) have scores.`
+);
+
+const sql = postgres(databaseUrl, { ssl: "require", max: 1, onnotice: () => undefined });
 let fixturesTouched = 0;
 
 await sql.begin(async (tx) => {
@@ -348,7 +364,7 @@ await sql.begin(async (tx) => {
           stage = ${stageLabel},
           home_country = ${match.home},
           away_country = ${match.away},
-          venue = coalesce(nullif(venue, ''), ${venue})
+          venue = ${venue}
       where external_id = ${match.externalId}
     `;
 
@@ -360,7 +376,7 @@ await sql.begin(async (tx) => {
             away_score = ${match.awayScore},
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
-            venue = coalesce(nullif(venue, ''), ${venue})
+            venue = ${venue}
         where external_id is null
           and home_country = ${match.home}
           and away_country = ${match.away}
@@ -396,6 +412,11 @@ await sql.end();
 console.log(
   `Synced ${fixturesTouched} fixture row(s) and placed ${placements.size}/48 team(s) from football-data.org (${competition}).`
 );
+if (finishedMatchCount > finishedWithScoreCount) {
+  console.log(
+    `Provider note: ${finishedMatchCount - finishedWithScoreCount} finished match(es) did not include full-time scores yet. The next scheduled run will retry.`
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -415,7 +436,7 @@ async function loadDotEnvLocal() {
     const envFile = await fs.readFile(path.join(root, ".env.local"), "utf8");
     for (const rawLine of envFile.split(/\r?\n/)) {
       const line = rawLine.replace(/^﻿/, "");
-      const match = line.match(/^([A-Z0-9_]+)=["']?(.*?)["']?$/);
+      const match = line.trim().match(/^([A-Z0-9_]+)=["']?(.*?)["']?$/);
       if (match && !process.env[match[1]]) process.env[match[1]] = match[2];
     }
   } catch {

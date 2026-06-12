@@ -3,6 +3,7 @@ node_modules
 .env
 .env*.local
 invite-links.txt
+invite-links.md
 *.log
 vercel-env.txt
 .vercel

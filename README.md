@@ -59,7 +59,7 @@ npx vercel --prod
 
 ## Automatic Results Sync
 
-`.github/workflows/sync-results.yml` runs every 6 hours (and on manual dispatch) and calls
+`.github/workflows/sync-results.yml` runs every 15 minutes (and on manual dispatch) and calls
 `npm run sync:results`. The script pulls live World Cup data straight from
 [football-data.org](https://www.football-data.org) — **no manual input required**:
 
@@ -75,6 +75,12 @@ Required GitHub Actions secrets (Repo → Settings → Secrets and variables →
 
 Without `FOOTBALL_DATA_TOKEN` the workflow exits cleanly without touching Neon. The
 `/admin` results form remains available as a manual override.
+
+GitHub scheduled workflows are polling, not a webhook. The workflow is scheduled at
+`:07`, `:22`, `:37`, and `:52` to avoid the busiest `:00` minute, but GitHub can
+still delay scheduled jobs. football-data.org's free tier also delays scores; use a
+live-score tier or another live provider if you need the scoreboard to change within
+minutes of full-time.
 
 ### How ranking works
 

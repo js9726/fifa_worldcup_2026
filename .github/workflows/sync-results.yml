@@ -2,9 +2,13 @@ name: Sync World Cup Results
 
 on:
   schedule:
-    # Every 6 hours — catches end-of-day North American matches plus earlier kickoffs.
-    - cron: "0 */6 * * *"
+    # Near-real-time polling. Avoid :00 because scheduled workflows are often delayed there.
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: sync-world-cup-results
+  cancel-in-progress: true
 
 jobs:
   sync-results:
@@ -20,6 +24,9 @@ jobs:
       # Lenient install (not `npm ci`): the repo's lock file is missing some
       # platform-optional transitive deps, and this job only needs `postgres`.
       - run: npm install --no-audit --no-fund
+
+      - name: Validate ranking logic
+        run: npm run sync:results -- --selftest
 
       - name: Sync results to Neon
         run: npm run sync:results

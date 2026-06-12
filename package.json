@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "setup:db": "node scripts/setup-db.mjs",
+    "export:invites": "node scripts/export-invite-links.mjs",
     "sync:results": "node scripts/sync-results.mjs"
   },
   "dependencies": {
