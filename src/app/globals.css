@@ -661,6 +661,12 @@ button {
   color: var(--muted);
 }
 
+.watch-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .status-pill {
   display: inline-flex;
   width: fit-content;
@@ -689,9 +695,47 @@ button {
   background: #fecaca;
 }
 
+.match-outcome {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.match-outcome.win {
+  color: #064e3b;
+  background: #bbf7d0;
+}
+
+.match-outcome.loss {
+  color: #7f1d1d;
+  background: #fecaca;
+}
+
+.match-outcome.draw {
+  color: #713f12;
+  background: #fde68a;
+}
+
 .watch-fixture strong,
 .watch-fixture span {
   display: block;
+}
+
+.watch-fixture .result-summary {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.match-stats span.result-summary {
+  color: #064e3b;
+  background: #bbf7d0;
 }
 
 .stats-strip {

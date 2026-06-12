@@ -91,8 +91,30 @@ await sql.begin(async (tx) => {
       venue text not null,
       home_score integer,
       away_score integer,
+      odds_provider text,
+      odds_bookmaker text,
+      odds_market text,
+      odds_favourite text,
+      odds_handicap_line numeric(5,2),
+      odds_home_price numeric(10,4),
+      odds_away_price numeric(10,4),
+      odds_last_updated timestamptz,
+      odds_external_event_id text,
       unique(kickoff, home_country, away_country)
     )
+  `;
+
+  await tx`
+    alter table fixtures
+      add column if not exists odds_provider text,
+      add column if not exists odds_bookmaker text,
+      add column if not exists odds_market text,
+      add column if not exists odds_favourite text,
+      add column if not exists odds_handicap_line numeric(5,2),
+      add column if not exists odds_home_price numeric(10,4),
+      add column if not exists odds_away_price numeric(10,4),
+      add column if not exists odds_last_updated timestamptz,
+      add column if not exists odds_external_event_id text
   `;
 
   for (const pot of seed.pots) {

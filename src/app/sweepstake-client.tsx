@@ -46,6 +46,14 @@ type MatchupStats = {
   awayPct: number;
   asianHandicap: string;
   asianResult: string | null;
+  asianSource: "trusted" | "model";
+  asianSourceLabel: string;
+};
+
+type OutcomeBadge = {
+  label: string;
+  detail: string;
+  tone: "win" | "loss" | "draw";
 };
 
 const FLAG_CODES: Record<string, string> = {
@@ -224,6 +232,59 @@ function scoreText(fixture: Fixture) {
   return fixtureHasScore(fixture) ? `${fixture.homeScore}-${fixture.awayScore}` : "vs";
 }
 
+function fixtureResultSummary(fixture: Fixture) {
+  if (!fixtureHasScore(fixture)) return null;
+
+  const homeScore = fixture.homeScore ?? 0;
+  const awayScore = fixture.awayScore ?? 0;
+  if (homeScore === awayScore) return `Draw: ${homeScore}-${awayScore}`;
+
+  const winner = homeScore > awayScore ? fixture.homeCountry : fixture.awayCountry;
+  return `Winner: ${winner} ${homeScore}-${awayScore}`;
+}
+
+function fixtureWinnerBadge(fixture: Fixture): OutcomeBadge | null {
+  if (!fixtureHasScore(fixture)) return null;
+
+  const homeScore = fixture.homeScore ?? 0;
+  const awayScore = fixture.awayScore ?? 0;
+  if (homeScore === awayScore) return { label: "DRAW", detail: "DRAW", tone: "draw" };
+
+  const winner = homeScore > awayScore ? fixture.homeCountry : fixture.awayCountry;
+  return { label: "WIN", detail: `${winner} WIN`, tone: "win" };
+}
+
+function teamResultSummary(fixture: Fixture, country: string) {
+  if (!fixtureHasScore(fixture)) return null;
+
+  const { opponentCountry, myScore, opponentScore } = fixtureOpponent(fixture, country);
+  if (myScore === null || opponentScore === null) return null;
+
+  if (myScore === opponentScore) return `${country} drew ${myScore}-${opponentScore} vs ${opponentCountry}`;
+
+  const outcome = myScore > opponentScore ? "won" : "lost";
+  return `${country} ${outcome} ${myScore}-${opponentScore} vs ${opponentCountry}`;
+}
+
+function teamOutcomeBadge(fixture: Fixture, country: string): OutcomeBadge | null {
+  if (!fixtureHasScore(fixture)) return null;
+
+  const { myScore, opponentScore } = fixtureOpponent(fixture, country);
+  if (myScore === null || opponentScore === null) return null;
+  if (myScore === opponentScore) return { label: "DRAW", detail: "Match draw", tone: "draw" };
+
+  const won = myScore > opponentScore;
+  return {
+    label: won ? "WIN" : "LOSS",
+    detail: won ? "Match won" : "Match lost",
+    tone: won ? "win" : "loss"
+  };
+}
+
+function formatHandicapLine(line: number) {
+  return line.toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
+}
+
 function getMatchupStats(
   fixture: Fixture,
   teamByCountry: Map<string, Team>
@@ -237,10 +298,22 @@ function getMatchupStats(
   const homePct = Math.round((homePower / (homePower + awayPower)) * 100);
   const awayPct = 100 - homePct;
   const diff = Math.abs(homePct - awayPct);
-  const line = diff < 8 ? 0 : diff < 18 ? 0.25 : diff < 30 ? 0.5 : diff < 42 ? 0.75 : diff < 55 ? 1 : 1.5;
-  const homeFavourite = homePct >= awayPct;
-  const favourite = homeFavourite ? home.country : away.country;
-  const asianHandicap = line === 0 ? "Level ball 0" : `${favourite} -${line}`;
+  const modelLine = diff < 8 ? 0 : diff < 18 ? 0.25 : diff < 30 ? 0.5 : diff < 42 ? 0.75 : diff < 55 ? 1 : 1.5;
+  const trustedFavourite =
+    fixture.oddsProvider &&
+    fixture.oddsFavourite &&
+    fixture.oddsHandicapLine !== null &&
+    [home.country, away.country].includes(fixture.oddsFavourite)
+      ? fixture.oddsFavourite
+      : null;
+  const line = trustedFavourite ? Math.abs(fixture.oddsHandicapLine ?? 0) : modelLine;
+  const homeFavourite = trustedFavourite ? trustedFavourite === home.country : homePct >= awayPct;
+  const favourite = trustedFavourite ?? (homeFavourite ? home.country : away.country);
+  const asianSource = trustedFavourite ? "trusted" : "model";
+  const asianSourceLabel = trustedFavourite
+    ? [fixture.oddsProvider, fixture.oddsBookmaker].filter(Boolean).join(" / ")
+    : "model fallback";
+  const asianHandicap = line === 0 ? "Level ball 0" : `${favourite} -${formatHandicapLine(line)}`;
 
   let asianResult: string | null = null;
   if (fixtureHasScore(fixture)) {
@@ -250,7 +323,7 @@ function getMatchupStats(
     asianResult = margin > line ? "covered" : margin === line ? "push" : "missed";
   }
 
-  return { homePct, awayPct, asianHandicap, asianResult };
+  return { homePct, awayPct, asianHandicap, asianResult, asianSource, asianSourceLabel };
 }
 
 function buildTeamWatch(draws: Draw[], fixtures: Fixture[]) {
@@ -712,6 +785,8 @@ function WatchCard({
   const fixtureLabel = fixture ? fixtureLabelForWatch(fixture, Boolean(item.todayFixture)) : "No fixture";
   const opponent = fixture ? fixtureOpponent(fixture, item.draw.team.country) : null;
   const stats = fixture ? getMatchupStats(fixture, teamByCountry) : null;
+  const resultSummary = fixture ? teamResultSummary(fixture, item.draw.team.country) : null;
+  const outcomeBadge = fixture ? teamOutcomeBadge(fixture, item.draw.team.country) : null;
   const isHomeTeam = fixture?.homeCountry === item.draw.team.country;
   const kickoff = fixture
     ? new Intl.DateTimeFormat("en-GB", {
@@ -732,7 +807,14 @@ function WatchCard({
           <span>{item.draw.team.potLabel}</span>
         </div>
       </div>
-      <span className={clsx("status-pill", status.tone)}>{status.label}</span>
+      <div className="watch-badges">
+        <span className={clsx("status-pill", status.tone)}>{status.label}</span>
+        {outcomeBadge && (
+          <span className={clsx("match-outcome", outcomeBadge.tone)} title={outcomeBadge.detail}>
+            {outcomeBadge.label}
+          </span>
+        )}
+      </div>
       {fixture && opponent ? (
         <div className="watch-fixture">
           <p className="eyebrow">{fixtureLabel}</p>
@@ -741,20 +823,20 @@ function WatchCard({
           </strong>
           <span>
             {kickoff} - {formatVenue(fixture.venue)}
-            {opponent.myScore !== null && opponent.opponentScore !== null
-              ? ` - ${opponent.myScore}-${opponent.opponentScore}`
-              : ""}
           </span>
+          {resultSummary && <span className="result-summary">{resultSummary}</span>}
           {stats && (
             <span>
-              Odds: {item.draw.team.country} {isHomeTeam ? stats.homePct : stats.awayPct}% vs{" "}
+              Pre-match model: {item.draw.team.country} {isHomeTeam ? stats.homePct : stats.awayPct}% vs{" "}
               {isHomeTeam ? stats.awayPct : stats.homePct}% {opponent.opponentCountry}
             </span>
           )}
           {stats && (
             <span>
               AH 放球: {stats.asianHandicap}
-              {stats.asianResult ? ` (${stats.asianResult})` : " est."}
+              {stats.asianResult
+                ? ` (${stats.asianResult}, ${stats.asianSourceLabel})`
+                : ` (${stats.asianSourceLabel})`}
             </span>
           )}
         </div>
@@ -839,6 +921,8 @@ function FixtureRow({
   teamByCountry: Map<string, Team>;
 }) {
   const stats = getMatchupStats(fixture, teamByCountry);
+  const resultSummary = fixtureResultSummary(fixture);
+  const winnerBadge = fixtureWinnerBadge(fixture);
   const label = fixtureLabel(fixture, localDateKey(fixture.kickoff) === localDateKey(new Date()));
   const kickoff = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
@@ -857,18 +941,26 @@ function FixtureRow({
           <CountryFlag country={fixture.homeCountry} fallback={countryFallback(fixture.homeCountry)} />
           {fixture.homeCountry} {scoreText(fixture)} {fixture.awayCountry}
           <CountryFlag country={fixture.awayCountry} fallback={countryFallback(fixture.awayCountry)} />
+          {winnerBadge && (
+            <span className={clsx("match-outcome", winnerBadge.tone)} title={winnerBadge.detail}>
+              {winnerBadge.detail}
+            </span>
+          )}
         </strong>
         <p>
           {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} - {formatVenue(fixture.venue)}
         </p>
         {stats && (
           <div className="match-stats">
+            {resultSummary && <span className="result-summary">{resultSummary}</span>}
             <span>
-              Odds: {fixture.homeCountry} {stats.homePct}% vs {stats.awayPct}% {fixture.awayCountry}
+              Pre-match model: {fixture.homeCountry} {stats.homePct}% vs {stats.awayPct}% {fixture.awayCountry}
             </span>
             <span>
               AH 放球: {stats.asianHandicap}
-              {stats.asianResult ? ` (${stats.asianResult})` : " est."}
+              {stats.asianResult
+                ? ` (${stats.asianResult}, ${stats.asianSourceLabel})`
+                : ` (${stats.asianSourceLabel})`}
             </span>
           </div>
         )}

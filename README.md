@@ -33,6 +33,47 @@ Prize pool: RM600.
 
 If the Wooden Spoon result is tied, the app shows the tied teams and splits that prize equally.
 
+## Trusted AH Source And Model Fallback
+
+The app supports trusted Asian Handicap odds from SportsDataIO. I chose
+SportsDataIO because its soccer guide explicitly covers spread / moneyline /
+totals game lines with Asian Handicap for soccer, plus pre-game and in-play line
+movement.
+
+`npm run sync:odds` is run by the same GitHub schedule as result syncing. If
+`SPORTSDATAIO_API_KEY` is not configured, the odds sync exits successfully and
+the app keeps using its local model fallback. This keeps the cron job runnable
+while the paid/trial provider access is being set up.
+
+When SportsDataIO returns a fixture AH line, the app stores it on the fixture and
+displays it as `SportsDataIO / bookmaker`. After kickoff, the app does not
+overwrite finished/scored fixture odds; it only evaluates whether the stored AH
+line was `covered`, `push`, or `missed`.
+
+If trusted odds are not available for a fixture, the fallback `AH 放球` line is a
+simple pre-match model estimate derived from each team's seeded `winRate` in
+`data.seed.json` / the `teams.win_rate` database column.
+
+For example, Mexico has `winRate: 3` and South Africa has `winRate: 1`, so the
+fixture model displays Mexico `3 / (3 + 1) = 75%` and South Africa `25%`.
+
+The AH line is then bucketed from that percentage gap:
+
+- gap below 8 points: level ball `0`
+- 8-17 points: `-0.25`
+- 18-29 points: `-0.5`
+- 30-41 points: `-0.75`
+- 42-54 points: `-1`
+- 55+ points: `-1.5`
+
+After a score is available, the app compares the favourite's winning margin to
+that model AH line and labels it `covered`, `push`, or `missed`.
+
+The GitHub cron updates fixtures, full-time scores, final rankings, and now
+optionally trusted AH odds. The current result sync script reads
+football-data.org's `score.fullTime`, so a match may stay in "awaiting score"
+until the provider publishes a full-time score.
+
 ## Setup
 
 ```bash
@@ -72,9 +113,13 @@ Required GitHub Actions secrets (Repo → Settings → Secrets and variables →
 
 - `DATABASE_URL` — the same Neon connection string.
 - `FOOTBALL_DATA_TOKEN` — free token from <https://www.football-data.org/client/register>.
+- Optional `SPORTSDATAIO_API_KEY` — trusted SportsDataIO odds key for AH lines.
 
 Without `FOOTBALL_DATA_TOKEN` the workflow exits cleanly without touching Neon. The
 `/admin` results form remains available as a manual override.
+
+Without `SPORTSDATAIO_API_KEY`, the odds step exits cleanly and the app shows the
+local AH model fallback.
 
 GitHub scheduled workflows are polling, not a webhook. The workflow is scheduled at
 `:07`, `:22`, `:37`, and `:52` to avoid the busiest `:00` minute, but GitHub can

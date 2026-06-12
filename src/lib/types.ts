@@ -44,6 +44,14 @@ export type Fixture = {
   awayScore: number | null;
   homeOwner: string | null;
   awayOwner: string | null;
+  oddsProvider: string | null;
+  oddsBookmaker: string | null;
+  oddsMarket: string | null;
+  oddsFavourite: string | null;
+  oddsHandicapLine: number | null;
+  oddsHomePrice: number | null;
+  oddsAwayPrice: number | null;
+  oddsLastUpdated: string | null;
 };
 
 export type Participant = {

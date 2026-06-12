@@ -9,7 +9,8 @@
     "lint": "next lint",
     "setup:db": "node scripts/setup-db.mjs",
     "export:invites": "node scripts/export-invite-links.mjs",
-    "sync:results": "node scripts/sync-results.mjs"
+    "sync:results": "node scripts/sync-results.mjs",
+    "sync:odds": "node scripts/sync-odds.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

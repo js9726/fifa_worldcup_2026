@@ -92,7 +92,15 @@ const fixtures: Fixture[] = seed.fixtures.map((fixture, index) => {
     homeScore: score[0],
     awayScore: score[1],
     homeOwner: ownerByCountry.get(fixture.home) ?? null,
-    awayOwner: ownerByCountry.get(fixture.away) ?? null
+    awayOwner: ownerByCountry.get(fixture.away) ?? null,
+    oddsProvider: null,
+    oddsBookmaker: null,
+    oddsMarket: null,
+    oddsFavourite: null,
+    oddsHandicapLine: null,
+    oddsHomePrice: null,
+    oddsAwayPrice: null,
+    oddsLastUpdated: null
   };
 });
 

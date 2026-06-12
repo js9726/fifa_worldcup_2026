@@ -33,3 +33,12 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+
+      - name: Sync trusted AH odds to Neon
+        run: npm run sync:odds
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SPORTSDATAIO_API_KEY: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          SPORTSDATAIO_COMPETITION_ID: ${{ vars.SPORTSDATAIO_COMPETITION_ID }}
+          SPORTSDATAIO_ODDS_URL: ${{ vars.SPORTSDATAIO_ODDS_URL }}
+          SPORTSDATAIO_BOOKMAKER: ${{ vars.SPORTSDATAIO_BOOKMAKER }}

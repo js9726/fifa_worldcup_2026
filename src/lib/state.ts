@@ -1,6 +1,8 @@
 import { getSql } from "./db";
 import type { AppState, Draw, Fixture, Participant, Pot, Team } from "./types";
 
+type SqlClient = ReturnType<typeof getSql>;
+
 type TeamRow = {
   id: number;
   country: string;
@@ -20,8 +22,37 @@ type TeamRow = {
   result_note: string | null;
 };
 
+type FixtureRow = Omit<Fixture, "oddsHandicapLine" | "oddsHomePrice" | "oddsAwayPrice"> & {
+  oddsHandicapLine: string | number | null;
+  oddsHomePrice: string | number | null;
+  oddsAwayPrice: string | number | null;
+};
+
+let oddsSchemaReady: Promise<void> | null = null;
+
 function toNumber(value: string | number) {
   return typeof value === "number" ? value : Number(value);
+}
+
+function toNullableNumber(value: string | number | null) {
+  return value === null ? null : toNumber(value);
+}
+
+function ensureOddsColumns(sql: SqlClient) {
+  oddsSchemaReady ??= sql`
+    alter table fixtures
+      add column if not exists odds_provider text,
+      add column if not exists odds_bookmaker text,
+      add column if not exists odds_market text,
+      add column if not exists odds_favourite text,
+      add column if not exists odds_handicap_line numeric(5,2),
+      add column if not exists odds_home_price numeric(10,4),
+      add column if not exists odds_away_price numeric(10,4),
+      add column if not exists odds_last_updated timestamptz,
+      add column if not exists odds_external_event_id text
+  `.then(() => undefined);
+
+  return oddsSchemaReady;
 }
 
 export function mapTeam(row: TeamRow): Team {
@@ -47,6 +78,7 @@ export function mapTeam(row: TeamRow): Team {
 
 export async function getAppState(inviteToken?: string | null): Promise<AppState> {
   const sql = getSql();
+  await ensureOddsColumns(sql);
 
   const [participantRows, potRows, teamRows, drawRows, fixtureRows] = await Promise.all([
     sql<Participant[]>`
@@ -91,7 +123,7 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
       join pots p on p.id = t.pot_id
       order by participants.name, t.pot_id
     `,
-    sql<Fixture[]>`
+    sql<FixtureRow[]>`
       select
         f.id,
         f.kickoff::text as kickoff,
@@ -101,6 +133,14 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
         f.venue,
         f.home_score as "homeScore",
         f.away_score as "awayScore",
+        f.odds_provider as "oddsProvider",
+        f.odds_bookmaker as "oddsBookmaker",
+        f.odds_market as "oddsMarket",
+        f.odds_favourite as "oddsFavourite",
+        f.odds_handicap_line as "oddsHandicapLine",
+        f.odds_home_price as "oddsHomePrice",
+        f.odds_away_price as "oddsAwayPrice",
+        f.odds_last_updated::text as "oddsLastUpdated",
         hp.name as "homeOwner",
         ap.name as "awayOwner"
       from fixtures f
@@ -140,7 +180,12 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
     })),
     myDraws: participant ? allDraws.filter((draw) => draw.participantId === participant.id) : [],
     allDraws,
-    fixtures: fixtureRows,
+    fixtures: fixtureRows.map((fixture) => ({
+      ...fixture,
+      oddsHandicapLine: toNullableNumber(fixture.oddsHandicapLine),
+      oddsHomePrice: toNullableNumber(fixture.oddsHomePrice),
+      oddsAwayPrice: toNullableNumber(fixture.oddsAwayPrice)
+    })),
     teams: teamRows.map(mapTeam)
   };
 }
