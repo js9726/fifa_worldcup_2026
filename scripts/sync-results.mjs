@@ -364,7 +364,7 @@ await sql.begin(async (tx) => {
           stage = ${stageLabel},
           home_country = ${match.home},
           away_country = ${match.away},
-          venue = ${venue}
+          venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
       where external_id = ${match.externalId}
     `;
 
@@ -376,7 +376,7 @@ await sql.begin(async (tx) => {
             away_score = ${match.awayScore},
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
-            venue = ${venue}
+            venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
         where external_id is null
           and home_country = ${match.home}
           and away_country = ${match.away}

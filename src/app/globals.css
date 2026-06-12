@@ -465,7 +465,25 @@ button {
   border-top: 1px solid var(--line);
 }
 
-.fixture-row strong {
+.fixture-time {
+  display: grid;
+  gap: 4px;
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.fixture-time small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fixture-main {
+  min-width: 0;
+}
+
+.fixture-main strong {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -477,15 +495,29 @@ button {
   height: 30px;
 }
 
-.fixture-row span {
-  color: var(--gold);
-  font-weight: 800;
-}
-
-.fixture-row p {
-  grid-column: 2;
+.fixture-main p {
   margin: 0;
   color: var(--muted);
+}
+
+.match-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.match-stats span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-2) 84%, var(--gold) 16%);
+  font-size: 0.78rem;
+  font-weight: 850;
 }
 
 .results-board {
@@ -660,6 +692,39 @@ button {
 .watch-fixture strong,
 .watch-fixture span {
   display: block;
+}
+
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.stats-strip div {
+  min-height: 66px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--row);
+}
+
+.stats-strip strong,
+.stats-strip span {
+  display: block;
+}
+
+.stats-strip strong {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.stats-strip span {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .home-shell {
@@ -862,11 +927,11 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .fixture-row p {
-    grid-column: 1;
+  .stats-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* iOS chokes on background-attachment: fixed — let it scroll on phones. */
+  /* iOS chokes on background-attachment: fixed - let it scroll on phones. */
   body {
     background-attachment: scroll;
   }

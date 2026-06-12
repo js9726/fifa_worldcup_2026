@@ -41,6 +41,13 @@ type TeamWatch = {
   nextFixture: Fixture | null;
 };
 
+type MatchupStats = {
+  homePct: number;
+  awayPct: number;
+  asianHandicap: string;
+  asianResult: string | null;
+};
+
 const FLAG_CODES: Record<string, string> = {
   Spain: "es",
   France: "fr",
@@ -194,6 +201,58 @@ function fixtureOpponent(fixture: Fixture, country: string) {
   };
 }
 
+function fixtureHasScore(fixture: Fixture) {
+  return fixture.homeScore !== null && fixture.awayScore !== null;
+}
+
+function fixtureHasStarted(fixture: Fixture) {
+  return new Date(fixture.kickoff).getTime() <= Date.now();
+}
+
+function fixtureLabel(fixture: Fixture, isToday: boolean) {
+  if (fixtureHasScore(fixture)) return "Result";
+  if (fixtureHasStarted(fixture)) return "Awaiting score";
+  if (isToday) return "Today";
+  return "Next match";
+}
+
+function formatVenue(venue: string) {
+  return venue && venue !== "TBD" ? venue : "Venue TBC";
+}
+
+function scoreText(fixture: Fixture) {
+  return fixtureHasScore(fixture) ? `${fixture.homeScore}-${fixture.awayScore}` : "vs";
+}
+
+function getMatchupStats(
+  fixture: Fixture,
+  teamByCountry: Map<string, Team>
+): MatchupStats | null {
+  const home = teamByCountry.get(fixture.homeCountry);
+  const away = teamByCountry.get(fixture.awayCountry);
+  if (!home || !away) return null;
+
+  const homePower = Math.max(home.winRate, 0.5);
+  const awayPower = Math.max(away.winRate, 0.5);
+  const homePct = Math.round((homePower / (homePower + awayPower)) * 100);
+  const awayPct = 100 - homePct;
+  const diff = Math.abs(homePct - awayPct);
+  const line = diff < 8 ? 0 : diff < 18 ? 0.25 : diff < 30 ? 0.5 : diff < 42 ? 0.75 : diff < 55 ? 1 : 1.5;
+  const homeFavourite = homePct >= awayPct;
+  const favourite = homeFavourite ? home.country : away.country;
+  const asianHandicap = line === 0 ? "Level ball 0" : `${favourite} -${line}`;
+
+  let asianResult: string | null = null;
+  if (fixtureHasScore(fixture)) {
+    const margin = homeFavourite
+      ? (fixture.homeScore ?? 0) - (fixture.awayScore ?? 0)
+      : (fixture.awayScore ?? 0) - (fixture.homeScore ?? 0);
+    asianResult = margin > line ? "covered" : margin === line ? "push" : "missed";
+  }
+
+  return { homePct, awayPct, asianHandicap, asianResult };
+}
+
 function buildTeamWatch(draws: Draw[], fixtures: Fixture[]) {
   const today = localDateKey(new Date());
   const now = Date.now();
@@ -227,6 +286,21 @@ function teamTournamentStatus(team: Team) {
   return {
     label: `Eliminated${team.eliminatedStage ? ` - ${team.eliminatedStage}` : ""}`,
     tone: "out"
+  };
+}
+
+function getTournamentStats(state: AppState) {
+  const finished = state.fixtures.filter(fixtureHasScore).length;
+  const awaitingScore = state.fixtures.filter(
+    (fixture) => fixtureHasStarted(fixture) && !fixtureHasScore(fixture)
+  ).length;
+  const eliminated = state.teams.filter((team) => team.finalRank && team.finalRank > 2).length;
+
+  return {
+    finished,
+    awaitingScore,
+    eliminated,
+    active: state.teams.length - eliminated
   };
 }
 
@@ -327,6 +401,11 @@ export default function SweepstakeClient({
     () => buildTeamWatch(state?.myDraws ?? [], state?.fixtures ?? []),
     [state]
   );
+  const teamByCountry = useMemo(
+    () => new Map((state?.teams ?? []).map((team) => [team.country, team])),
+    [state]
+  );
+  const tournamentStats = useMemo(() => (state ? getTournamentStats(state) : null), [state]);
 
   if (!state) {
     return (
@@ -407,9 +486,12 @@ export default function SweepstakeClient({
               </div>
               <span>{localDateKey(new Date())}</span>
             </header>
+            {tournamentStats && <StatsStrip stats={tournamentStats} />}
             <div className="watch-grid">
               {myTeamWatch.length ? (
-                myTeamWatch.map((item) => <WatchCard key={item.draw.team.id} item={item} />)
+                myTeamWatch.map((item) => (
+                  <WatchCard key={item.draw.team.id} item={item} teamByCountry={teamByCountry} />
+                ))
               ) : (
                 <p className="empty">Your teams will appear here after your draw.</p>
               )}
@@ -482,16 +564,19 @@ export default function SweepstakeClient({
       )}
 
       {tab === "fixtures" && (
-        <section className="fixture-board">
-          {Object.entries(fixtureGroups).map(([date, fixtures]) => (
-            <article className="fixture-day" key={date}>
-              <h2>{date}</h2>
-              {fixtures.map((fixture) => (
-                <FixtureRow key={fixture.id} fixture={fixture} />
-              ))}
-            </article>
-          ))}
-        </section>
+        <>
+          {tournamentStats && <StatsStrip stats={tournamentStats} />}
+          <section className="fixture-board">
+            {Object.entries(fixtureGroups).map(([date, fixtures]) => (
+              <article className="fixture-day" key={date}>
+                <h2>{date}</h2>
+                {fixtures.map((fixture) => (
+                  <FixtureRow key={fixture.id} fixture={fixture} teamByCountry={teamByCountry} />
+                ))}
+              </article>
+            ))}
+          </section>
+        </>
       )}
 
       {tab === "results" && (
@@ -588,11 +673,46 @@ function PrizeCard({
   );
 }
 
-function WatchCard({ item }: { item: TeamWatch }) {
+function StatsStrip({
+  stats
+}: {
+  stats: ReturnType<typeof getTournamentStats>;
+}) {
+  return (
+    <div className="stats-strip">
+      <div>
+        <strong>{stats.finished}</strong>
+        <span>results in</span>
+      </div>
+      <div>
+        <strong>{stats.awaitingScore}</strong>
+        <span>awaiting score</span>
+      </div>
+      <div>
+        <strong>{stats.eliminated}</strong>
+        <span>{stats.eliminated ? "eliminated" : "no teams eliminated yet"}</span>
+      </div>
+      <div>
+        <strong>{stats.active}</strong>
+        <span>still alive</span>
+      </div>
+    </div>
+  );
+}
+
+function WatchCard({
+  item,
+  teamByCountry
+}: {
+  item: TeamWatch;
+  teamByCountry: Map<string, Team>;
+}) {
   const status = teamTournamentStatus(item.draw.team);
   const fixture = item.todayFixture ?? item.nextFixture;
-  const fixtureLabel = item.todayFixture ? "Today" : item.nextFixture ? "Next match" : "No fixture";
+  const fixtureLabel = fixture ? fixtureLabelForWatch(fixture, Boolean(item.todayFixture)) : "No fixture";
   const opponent = fixture ? fixtureOpponent(fixture, item.draw.team.country) : null;
+  const stats = fixture ? getMatchupStats(fixture, teamByCountry) : null;
+  const isHomeTeam = fixture?.homeCountry === item.draw.team.country;
   const kickoff = fixture
     ? new Intl.DateTimeFormat("en-GB", {
         weekday: "short",
@@ -620,11 +740,23 @@ function WatchCard({ item }: { item: TeamWatch }) {
             vs {opponent.opponentCountry} ({opponent.opponentOwner ?? "Unclaimed"})
           </strong>
           <span>
-            {kickoff} - {fixture.venue}
+            {kickoff} - {formatVenue(fixture.venue)}
             {opponent.myScore !== null && opponent.opponentScore !== null
               ? ` - ${opponent.myScore}-${opponent.opponentScore}`
               : ""}
           </span>
+          {stats && (
+            <span>
+              Odds: {item.draw.team.country} {isHomeTeam ? stats.homePct : stats.awayPct}% vs{" "}
+              {isHomeTeam ? stats.awayPct : stats.homePct}% {opponent.opponentCountry}
+            </span>
+          )}
+          {stats && (
+            <span>
+              AH 放球: {stats.asianHandicap}
+              {stats.asianResult ? ` (${stats.asianResult})` : " est."}
+            </span>
+          )}
         </div>
       ) : (
         <div className="watch-fixture muted">
@@ -635,6 +767,10 @@ function WatchCard({ item }: { item: TeamWatch }) {
       )}
     </article>
   );
+}
+
+function fixtureLabelForWatch(fixture: Fixture, isToday: boolean) {
+  return fixtureLabel(fixture, isToday);
 }
 
 function CountryFlag({
@@ -695,7 +831,15 @@ function TeamTile({ team, compact = false }: { team: Team; compact?: boolean }) 
   );
 }
 
-function FixtureRow({ fixture }: { fixture: Fixture }) {
+function FixtureRow({
+  fixture,
+  teamByCountry
+}: {
+  fixture: Fixture;
+  teamByCountry: Map<string, Team>;
+}) {
+  const stats = getMatchupStats(fixture, teamByCountry);
+  const label = fixtureLabel(fixture, localDateKey(fixture.kickoff) === localDateKey(new Date()));
   const kickoff = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
@@ -704,16 +848,31 @@ function FixtureRow({ fixture }: { fixture: Fixture }) {
 
   return (
     <div className="fixture-row">
-      <span>{kickoff}</span>
-      <strong>
-        <CountryFlag country={fixture.homeCountry} fallback={countryFallback(fixture.homeCountry)} />
-        {fixture.homeCountry} {fixture.homeScore ?? ""} vs {fixture.awayScore ?? ""}{" "}
-        {fixture.awayCountry}
-        <CountryFlag country={fixture.awayCountry} fallback={countryFallback(fixture.awayCountry)} />
-      </strong>
-      <p>
-        {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} - {fixture.venue}
-      </p>
+      <span className="fixture-time">
+        {kickoff}
+        <small>{label}</small>
+      </span>
+      <div className="fixture-main">
+        <strong>
+          <CountryFlag country={fixture.homeCountry} fallback={countryFallback(fixture.homeCountry)} />
+          {fixture.homeCountry} {scoreText(fixture)} {fixture.awayCountry}
+          <CountryFlag country={fixture.awayCountry} fallback={countryFallback(fixture.awayCountry)} />
+        </strong>
+        <p>
+          {fixture.homeOwner ?? "Unclaimed"} vs {fixture.awayOwner ?? "Unclaimed"} - {formatVenue(fixture.venue)}
+        </p>
+        {stats && (
+          <div className="match-stats">
+            <span>
+              Odds: {fixture.homeCountry} {stats.homePct}% vs {stats.awayPct}% {fixture.awayCountry}
+            </span>
+            <span>
+              AH 放球: {stats.asianHandicap}
+              {stats.asianResult ? ` (${stats.asianResult})` : " est."}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
