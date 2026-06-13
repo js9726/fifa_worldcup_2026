@@ -35,19 +35,19 @@ If the Wooden Spoon result is tied, the app shows the tied teams and splits that
 
 ## Trusted AH Source And Model Fallback
 
-The app supports trusted Asian Handicap odds from API-Football's free tier.
-API-Football has official World Cup 2026 coverage for `league=1` / `season=2026`,
-including odds, and its free plan includes pre-match odds with 100 requests per
-day. The sync is quota-safe by default: it throttles provider calls to once every
-180 minutes unless run with `--force`.
+The app supports trusted Asian Handicap odds from OddsPapi's free tier.
+OddsPapi provides a structured World Cup 2026 soccer odds feed with Asian
+Handicap markets, including sharp-book coverage such as Pinnacle when available.
+The sync is quota-safe by default: it throttles provider calls to once per day
+unless run with `--force`.
 
 `npm run sync:odds` is run by the same GitHub schedule as result syncing. If
-`API_FOOTBALL_KEY` is not configured, the odds sync exits successfully and the
+`ODDSPAPI_KEY` is not configured, the odds sync exits successfully and the
 app keeps using its local model fallback. This keeps the cron job runnable while
 the free API key is being set up.
 
-When API-Football returns a fixture AH line, the app stores it on the fixture and
-displays it as `API-Football / bookmaker`. After kickoff, the app does not
+When OddsPapi returns a fixture AH line, the app stores it on the fixture and
+displays it as `OddsPapi / bookmaker`. After kickoff, the app does not
 overwrite finished/scored fixture odds; it only evaluates whether the stored AH
 line was `covered`, `push`, or `missed`.
 
@@ -114,20 +114,19 @@ Required GitHub Actions secrets (Repo -> Settings -> Secrets and variables -> Ac
 
 - `DATABASE_URL` - the same Neon connection string.
 - `FOOTBALL_DATA_TOKEN` - free token from <https://www.football-data.org/client/register>.
-- Optional `API_FOOTBALL_KEY` - free API-Football key for trusted AH lines.
+- Optional `ODDSPAPI_KEY` - free OddsPapi key for trusted AH lines.
 
 Optional GitHub Actions variables:
 
-- `API_FOOTBALL_LEAGUE` - defaults to `1` for FIFA World Cup.
-- `API_FOOTBALL_SEASON` - defaults to `2026`.
-- `API_FOOTBALL_AH_BET_IDS` - comma-separated override if API-Football changes Asian Handicap bet discovery.
-- `API_FOOTBALL_BOOKMAKER` - preferred bookmaker name when more than one is available.
-- `API_FOOTBALL_ODDS_MIN_INTERVAL_MINUTES` - defaults to `180` to protect the free quota.
+- `ODDSPAPI_BOOKMAKERS` - comma-separated bookmakers requested from OddsPapi.
+- `ODDSPAPI_BOOKMAKER` - preferred bookmaker name when more than one is available.
+- `ODDSPAPI_ODDS_MIN_INTERVAL_MINUTES` - defaults to `1440` to protect the free quota.
+- `ODDSPAPI_ODDS_MAX_FIXTURES` - defaults to `8` odds fixture calls per sync.
 
 Without `FOOTBALL_DATA_TOKEN` the workflow exits cleanly without touching Neon. The
 `/admin` results form remains available as a manual override.
 
-Without `API_FOOTBALL_KEY`, the odds step exits cleanly and the app shows the
+Without `ODDSPAPI_KEY`, the odds step exits cleanly and the app shows the
 local AH model fallback.
 
 GitHub scheduled workflows are polling, not a webhook. The workflow is scheduled at
