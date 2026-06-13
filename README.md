@@ -35,22 +35,23 @@ If the Wooden Spoon result is tied, the app shows the tied teams and splits that
 
 ## Trusted AH Source And Model Fallback
 
-The app supports trusted Asian Handicap odds from SportsDataIO. I chose
-SportsDataIO because its soccer guide explicitly covers spread / moneyline /
-totals game lines with Asian Handicap for soccer, plus pre-game and in-play line
-movement.
+The app supports trusted Asian Handicap odds from API-Football's free tier.
+API-Football has official World Cup 2026 coverage for `league=1` / `season=2026`,
+including odds, and its free plan includes pre-match odds with 100 requests per
+day. The sync is quota-safe by default: it throttles provider calls to once every
+180 minutes unless run with `--force`.
 
 `npm run sync:odds` is run by the same GitHub schedule as result syncing. If
-`SPORTSDATAIO_API_KEY` is not configured, the odds sync exits successfully and
-the app keeps using its local model fallback. This keeps the cron job runnable
-while the paid/trial provider access is being set up.
+`API_FOOTBALL_KEY` is not configured, the odds sync exits successfully and the
+app keeps using its local model fallback. This keeps the cron job runnable while
+the free API key is being set up.
 
-When SportsDataIO returns a fixture AH line, the app stores it on the fixture and
-displays it as `SportsDataIO / bookmaker`. After kickoff, the app does not
+When API-Football returns a fixture AH line, the app stores it on the fixture and
+displays it as `API-Football / bookmaker`. After kickoff, the app does not
 overwrite finished/scored fixture odds; it only evaluates whether the stored AH
 line was `covered`, `push`, or `missed`.
 
-If trusted odds are not available for a fixture, the fallback `AH 放球` line is a
+If trusted odds are not available for a fixture, the fallback `AH` line is a
 simple pre-match model estimate derived from each team's seeded `winRate` in
 `data.seed.json` / the `teams.win_rate` database column.
 
@@ -102,23 +103,31 @@ npx vercel --prod
 
 `.github/workflows/sync-results.yml` runs every 15 minutes (and on manual dispatch) and calls
 `npm run sync:results`. The script pulls live World Cup data straight from
-[football-data.org](https://www.football-data.org) — **no manual input required**:
+[football-data.org](https://www.football-data.org) - **no manual input required**:
 
 - Updates every fixture's score (linking each match by `external_id`, inserting knockout
   fixtures as the bracket fills in).
-- Computes each team's `final_rank` (1–48) and `eliminated_stage` automatically, which drives
+- Computes each team's `final_rank` (1-48) and `eliminated_stage` automatically, which drives
   the champion / runner-up / wooden-spoon prize logic.
 
-Required GitHub Actions secrets (Repo → Settings → Secrets and variables → Actions):
+Required GitHub Actions secrets (Repo -> Settings -> Secrets and variables -> Actions):
 
-- `DATABASE_URL` — the same Neon connection string.
-- `FOOTBALL_DATA_TOKEN` — free token from <https://www.football-data.org/client/register>.
-- Optional `SPORTSDATAIO_API_KEY` — trusted SportsDataIO odds key for AH lines.
+- `DATABASE_URL` - the same Neon connection string.
+- `FOOTBALL_DATA_TOKEN` - free token from <https://www.football-data.org/client/register>.
+- Optional `API_FOOTBALL_KEY` - free API-Football key for trusted AH lines.
+
+Optional GitHub Actions variables:
+
+- `API_FOOTBALL_LEAGUE` - defaults to `1` for FIFA World Cup.
+- `API_FOOTBALL_SEASON` - defaults to `2026`.
+- `API_FOOTBALL_AH_BET_IDS` - comma-separated override if API-Football changes Asian Handicap bet discovery.
+- `API_FOOTBALL_BOOKMAKER` - preferred bookmaker name when more than one is available.
+- `API_FOOTBALL_ODDS_MIN_INTERVAL_MINUTES` - defaults to `180` to protect the free quota.
 
 Without `FOOTBALL_DATA_TOKEN` the workflow exits cleanly without touching Neon. The
 `/admin` results form remains available as a manual override.
 
-Without `SPORTSDATAIO_API_KEY`, the odds step exits cleanly and the app shows the
+Without `API_FOOTBALL_KEY`, the odds step exits cleanly and the app shows the
 local AH model fallback.
 
 GitHub scheduled workflows are polling, not a webhook. The workflow is scheduled at
@@ -130,22 +139,23 @@ minutes of full-time.
 ### How ranking works
 
 The 48 teams are placed into bands by how far they got, then ordered within each band by
-group-stage performance (points → goal difference → goals for):
+group-stage performance (points -> goal difference -> goals for):
 
 | Finish | Rank | Source |
 |---|---|---|
 | Champion | 1 | Winner of the `FINAL` |
 | Runner-up | 2 | Loser of the `FINAL` |
 | Third / Fourth | 3 / 4 | `THIRD_PLACE` play-off |
-| Quarter-finals out | 5–8 | Losers of `QUARTER_FINALS` |
-| Round of 16 out | 9–16 | Losers of `LAST_16` |
-| Round of 32 out | 17–32 | Losers of `LAST_32` |
-| Group stage out | 33–48 | Teams not in the `LAST_32` bracket |
+| Quarter-finals out | 5-8 | Losers of `QUARTER_FINALS` |
+| Round of 16 out | 9-16 | Losers of `LAST_16` |
+| Round of 32 out | 17-32 | Losers of `LAST_32` |
+| Group stage out | 33-48 | Teams not in the `LAST_32` bracket |
 
 Validate the ranking logic offline (no token or DB needed):
 
 ```bash
 node scripts/sync-results.mjs --selftest
+node scripts/sync-odds.mjs --selftest
 ```
 
 If football-data.org spells a country differently from our DB (e.g. `Ivory Coast`,

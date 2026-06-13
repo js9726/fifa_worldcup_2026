@@ -28,6 +28,9 @@ jobs:
       - name: Validate ranking logic
         run: npm run sync:results -- --selftest
 
+      - name: Validate AH odds parser
+        run: npm run sync:odds -- --selftest
+
       - name: Sync results to Neon
         run: npm run sync:results
         env:
@@ -38,7 +41,9 @@ jobs:
         run: npm run sync:odds
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SPORTSDATAIO_API_KEY: ${{ secrets.SPORTSDATAIO_API_KEY }}
-          SPORTSDATAIO_COMPETITION_ID: ${{ vars.SPORTSDATAIO_COMPETITION_ID }}
-          SPORTSDATAIO_ODDS_URL: ${{ vars.SPORTSDATAIO_ODDS_URL }}
-          SPORTSDATAIO_BOOKMAKER: ${{ vars.SPORTSDATAIO_BOOKMAKER }}
+          API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          API_FOOTBALL_LEAGUE: ${{ vars.API_FOOTBALL_LEAGUE }}
+          API_FOOTBALL_SEASON: ${{ vars.API_FOOTBALL_SEASON }}
+          API_FOOTBALL_AH_BET_IDS: ${{ vars.API_FOOTBALL_AH_BET_IDS }}
+          API_FOOTBALL_BOOKMAKER: ${{ vars.API_FOOTBALL_BOOKMAKER }}
+          API_FOOTBALL_ODDS_MIN_INTERVAL_MINUTES: ${{ vars.API_FOOTBALL_ODDS_MIN_INTERVAL_MINUTES }}
