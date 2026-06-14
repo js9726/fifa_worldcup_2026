@@ -261,17 +261,15 @@ button {
     display: none;
   }
 
-  /* Night theme: the full lockup's navy "WORLD CUP" wordmark is unreadable on
-     the dark header, so keep the square mark instead. */
+  /* Night theme shows the icon variant; size it identically to the Daylight
+     logo so the mark renders at the same scale across both themes. */
   [data-theme="night"] .topbar-logo--full {
     display: none;
   }
 
   [data-theme="night"] .topbar-logo--icon {
     display: block;
-    /* match the Daylight full-lockup's height (lockup is 3:2) so both themes
-       render the logo at the same scale */
-    width: clamp(127px, 12.7vw, 167px);
+    width: clamp(190px, 19vw, 250px);
   }
 }
 
