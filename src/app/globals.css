@@ -1200,16 +1200,42 @@ button {
 .admin-grid select,
 .admin-grid textarea {
   width: 100%;
+  min-width: 0;
   min-height: 44px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--text);
-  background: rgba(3, 7, 12, 0.82);
+  background: var(--field);
+  font-weight: 650;
+}
+
+.admin-grid select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px;
 }
 
 .admin-grid textarea {
   min-height: 120px;
+}
+
+.admin-grid input:focus-visible,
+.admin-grid select:focus-visible,
+.admin-grid textarea:focus-visible,
+.admin-gate input:focus-visible {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+.admin-grid input::placeholder,
+.admin-grid textarea::placeholder {
+  color: var(--muted);
 }
 
 .admin-grid .wide {
@@ -1238,11 +1264,12 @@ button {
 .admin-gate input {
   width: 100%;
   min-height: 44px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 8px;
   padding: 10px 12px;
   color: var(--text);
-  background: rgba(3, 7, 12, 0.82);
+  background: var(--field);
+  font-weight: 650;
 }
 
 .admin-results {
