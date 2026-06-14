@@ -580,10 +580,10 @@ export default function SweepstakeClient({
         />
         <img
           className="topbar-logo topbar-logo--full"
-          src="/wc-logo-full.png"
+          src="/wc-logo-icon.png"
           alt="World Cup Sweepstake"
-          width={260}
-          height={173}
+          width={300}
+          height={260}
         />
         {(() => {
           const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
