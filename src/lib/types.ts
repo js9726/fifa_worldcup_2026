@@ -59,6 +59,70 @@ export type Participant = {
   name: string;
 };
 
+export type BetMarket = "winner" | "asian_handicap";
+
+export type BetSettlementBasis = "advance_winner" | "ninety_minutes";
+
+export type BetOfferStatus = "open" | "filled" | "closed" | "settled" | "void";
+
+export type BetAcceptanceStatus = "pending" | "settled" | "void";
+
+export type BetAcceptanceResult = "win" | "loss" | "half_win" | "half_loss" | "void" | "pending";
+
+export type BetAcceptance = {
+  id: number;
+  offerId: number;
+  participantId: number;
+  participantName: string;
+  amount: number;
+  status: BetAcceptanceStatus;
+  result: BetAcceptanceResult;
+  ledgerDelta: number;
+  acceptedAt: string;
+};
+
+export type BetOffer = {
+  id: number;
+  fixtureId: number;
+  creatorParticipantId: number;
+  creatorName: string;
+  market: BetMarket;
+  creatorSide: string;
+  opponentSide: string;
+  settlementBasis: BetSettlementBasis;
+  handicapTeam: string | null;
+  handicapLine: number | null;
+  maxAmount: number;
+  acceptedAmount: number;
+  remainingAmount: number;
+  status: BetOfferStatus;
+  createdAt: string;
+  note: string | null;
+  acceptances: BetAcceptance[];
+};
+
+export type BetLeaderboardRow = {
+  rank: number;
+  participantId: number;
+  participantName: string;
+  settledNet: number;
+  won: number;
+  lost: number;
+  void: number;
+  settledVolume: number;
+  openExposure: number;
+  openOffers: number;
+  activeAccepts: number;
+};
+
+export type BettingState = {
+  offers: BetOffer[];
+  openOffers: BetOffer[];
+  myOffers: BetOffer[];
+  myAcceptances: BetAcceptance[];
+  leaderboard: BetLeaderboardRow[];
+};
+
 export type AppState = {
   participant: Participant | null;
   participants: Participant[];
@@ -67,4 +131,5 @@ export type AppState = {
   allDraws: Draw[];
   fixtures: Fixture[];
   teams: Team[];
+  betting: BettingState;
 };

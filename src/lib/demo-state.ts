@@ -1,5 +1,6 @@
 import seed from "../../data.seed.json";
-import type { AppState, Draw, Fixture, Participant, Pot, Team } from "./types";
+import { buildBettingState } from "./betting";
+import type { AppState, BetOffer, Draw, Fixture, Participant, Pot, Team } from "./types";
 
 type SeedTeam = (typeof seed.teams)[number];
 
@@ -104,6 +105,202 @@ const fixtures: Fixture[] = seed.fixtures.map((fixture, index) => {
   };
 });
 
+const argentinaFinalFixtureId = fixtures.length + 1;
+
+fixtures.push({
+  id: argentinaFinalFixtureId,
+  kickoff: "2026-07-19T15:00:00-04:00",
+  stage: "Final",
+  homeCountry: "Argentina",
+  awayCountry: "France",
+  venue: "New Jersey",
+  homeScore: 2,
+  awayScore: 2,
+  homeOwner: ownerByCountry.get("Argentina") ?? null,
+  awayOwner: ownerByCountry.get("France") ?? null,
+  oddsProvider: "Demo",
+  oddsBookmaker: "Advance winner example",
+  oddsMarket: "Asian Handicap -0.25",
+  oddsFavourite: "Argentina",
+  oddsHandicapLine: -0.25,
+  oddsHomePrice: 1.92,
+  oddsAwayPrice: 1.96,
+  oddsLastUpdated: "2026-07-19T20:00:00.000Z"
+});
+
+const participantByName = new Map(participants.map((participant) => [participant.name, participant]));
+const fixtureByTeams = new Map(fixtures.map((fixture) => [`${fixture.homeCountry}-${fixture.awayCountry}`, fixture]));
+
+function participant(name: string) {
+  const row = participantByName.get(name);
+  if (!row) throw new Error(`Unknown demo participant: ${name}`);
+  return row;
+}
+
+function fixture(home: string, away: string) {
+  const row = fixtureByTeams.get(`${home}-${away}`);
+  if (!row) throw new Error(`Unknown demo fixture: ${home}-${away}`);
+  return row;
+}
+
+const demoBetOffers: BetOffer[] = [
+  {
+    id: 1,
+    fixtureId: argentinaFinalFixtureId,
+    creatorParticipantId: participant("SK").id,
+    creatorName: "SK",
+    market: "winner",
+    creatorSide: "Argentina",
+    opponentSide: "France",
+    settlementBasis: "advance_winner",
+    handicapTeam: null,
+    handicapLine: null,
+    maxAmount: 50,
+    acceptedAmount: 50,
+    remainingAmount: 0,
+    status: "settled",
+    createdAt: "2026-07-18T10:12:00.000Z",
+    note: "Argentina advanced after a 2-2 normal-time score. Advance Winner includes extra time and penalties.",
+    acceptances: [
+      {
+        id: 101,
+        offerId: 1,
+        participantId: participant("LK").id,
+        participantName: "LK",
+        amount: 50,
+        status: "settled",
+        result: "loss",
+        ledgerDelta: -50,
+        acceptedAt: "2026-07-18T10:16:00.000Z"
+      }
+    ]
+  },
+  {
+    id: 2,
+    fixtureId: fixture("Brazil", "Haiti").id,
+    creatorParticipantId: participant("HY").id,
+    creatorName: "HY",
+    market: "winner",
+    creatorSide: "Brazil",
+    opponentSide: "Haiti",
+    settlementBasis: "advance_winner",
+    handicapTeam: null,
+    handicapLine: null,
+    maxAmount: 50,
+    acceptedAmount: 30,
+    remainingAmount: 20,
+    status: "open",
+    createdAt: "2026-06-18T09:30:00.000Z",
+    note: "Partly filled; no minimum acceptance amount, so the final RM20 can still be taken.",
+    acceptances: [
+      {
+        id: 102,
+        offerId: 2,
+        participantId: participant("BS").id,
+        participantName: "BS",
+        amount: 30,
+        status: "pending",
+        result: "pending",
+        ledgerDelta: 0,
+        acceptedAt: "2026-06-18T09:36:00.000Z"
+      }
+    ]
+  },
+  {
+    id: 3,
+    fixtureId: fixture("Sweden", "Tunisia").id,
+    creatorParticipantId: participant("CY").id,
+    creatorName: "CY",
+    market: "asian_handicap",
+    creatorSide: "Sweden -0.75",
+    opponentSide: "Tunisia +0.75",
+    settlementBasis: "ninety_minutes",
+    handicapTeam: "Sweden",
+    handicapLine: -0.75,
+    maxAmount: 70,
+    acceptedAmount: 35,
+    remainingAmount: 35,
+    status: "open",
+    createdAt: "2026-06-14T23:30:00.000Z",
+    note: "AH offer uses the 90-minute score basis unless the creator selects otherwise.",
+    acceptances: [
+      {
+        id: 103,
+        offerId: 3,
+        participantId: participant("KL").id,
+        participantName: "KL",
+        amount: 35,
+        status: "pending",
+        result: "pending",
+        ledgerDelta: 0,
+        acceptedAt: "2026-06-14T23:45:00.000Z"
+      }
+    ]
+  },
+  {
+    id: 4,
+    fixtureId: fixture("Spain", "Cape Verde").id,
+    creatorParticipantId: participant("YK").id,
+    creatorName: "YK",
+    market: "asian_handicap",
+    creatorSide: "Spain -1.5",
+    opponentSide: "Cape Verde +1.5",
+    settlementBasis: "ninety_minutes",
+    handicapTeam: "Spain",
+    handicapLine: -1.5,
+    maxAmount: 50,
+    acceptedAmount: 50,
+    remainingAmount: 0,
+    status: "settled",
+    createdAt: "2026-06-15T08:10:00.000Z",
+    note: "Spain won 4-0, so Spain -1.5 covered.",
+    acceptances: [
+      {
+        id: 104,
+        offerId: 4,
+        participantId: participant("SL").id,
+        participantName: "SL",
+        amount: 50,
+        status: "settled",
+        result: "loss",
+        ledgerDelta: -50,
+        acceptedAt: "2026-06-15T08:18:00.000Z"
+      }
+    ]
+  },
+  {
+    id: 5,
+    fixtureId: fixture("United States", "Paraguay").id,
+    creatorParticipantId: participant("CC").id,
+    creatorName: "CC",
+    market: "asian_handicap",
+    creatorSide: "United States 0",
+    opponentSide: "Paraguay 0",
+    settlementBasis: "ninety_minutes",
+    handicapTeam: "United States",
+    handicapLine: 0,
+    maxAmount: 50,
+    acceptedAmount: 50,
+    remainingAmount: 0,
+    status: "void",
+    createdAt: "2026-06-12T13:00:00.000Z",
+    note: "Level ball ended 2-2, so the accepted bet was void/refunded.",
+    acceptances: [
+      {
+        id: 105,
+        offerId: 5,
+        participantId: participant("SY").id,
+        participantName: "SY",
+        amount: 50,
+        status: "void",
+        result: "void",
+        ledgerDelta: 0,
+        acceptedAt: "2026-06-12T13:04:00.000Z"
+      }
+    ]
+  }
+];
+
 export const demoState: AppState = {
   participant: participants[0],
   participants,
@@ -120,5 +317,6 @@ export const demoState: AppState = {
   myDraws: allDraws.filter((draw) => draw.participantId === participants[0].id),
   allDraws,
   fixtures,
-  teams: teams.sort((a, b) => a.potId - b.potId || a.country.localeCompare(b.country))
+  teams: teams.sort((a, b) => a.potId - b.potId || a.country.localeCompare(b.country)),
+  betting: buildBettingState(participants, participants[0], demoBetOffers)
 };

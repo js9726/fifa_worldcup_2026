@@ -1,5 +1,20 @@
 import { getSql } from "./db";
-import type { AppState, Draw, Fixture, Participant, Pot, Team } from "./types";
+import { buildBettingState } from "./betting";
+import type {
+  AppState,
+  BetAcceptance,
+  BetAcceptanceResult,
+  BetAcceptanceStatus,
+  BetMarket,
+  BetOffer,
+  BetOfferStatus,
+  BetSettlementBasis,
+  Draw,
+  Fixture,
+  Participant,
+  Pot,
+  Team
+} from "./types";
 
 type SqlClient = ReturnType<typeof getSql>;
 
@@ -29,6 +44,36 @@ type FixtureRow = Omit<Fixture, "oddsHandicapLine" | "oddsHomePrice" | "oddsAway
 };
 
 let oddsSchemaReady: Promise<void> | null = null;
+let bettingSchemaReady: Promise<void> | null = null;
+
+type BetOfferRow = {
+  id: number;
+  fixture_id: number;
+  creator_participant_id: number;
+  creator_name: string;
+  market: string;
+  creator_side: string;
+  opponent_side: string;
+  settlement_basis: string;
+  handicap_team: string | null;
+  handicap_line: string | number | null;
+  max_amount: string | number;
+  status: string;
+  created_at: string;
+  note: string | null;
+};
+
+type BetAcceptanceRow = {
+  id: number;
+  offer_id: number;
+  participant_id: number;
+  participant_name: string;
+  amount: string | number;
+  status: string;
+  result: string;
+  ledger_delta: string | number;
+  accepted_at: string;
+};
 
 function toNumber(value: string | number) {
   return typeof value === "number" ? value : Number(value);
@@ -55,6 +100,128 @@ function ensureOddsColumns(sql: SqlClient) {
   return oddsSchemaReady;
 }
 
+function ensureBettingTables(sql: SqlClient) {
+  bettingSchemaReady ??= (async () => {
+    await sql`
+      create table if not exists bet_offers (
+        id serial primary key,
+        fixture_id integer not null references fixtures(id) on delete cascade,
+        creator_participant_id integer not null references participants(id) on delete cascade,
+        market text not null,
+        creator_side text not null,
+        opponent_side text not null,
+        settlement_basis text not null,
+        handicap_team text,
+        handicap_line numeric(5,2),
+        max_amount numeric(10,2) not null,
+        status text not null default 'open',
+        note text,
+        created_at timestamptz not null default now()
+      )
+    `;
+    await sql`
+      create table if not exists bet_acceptances (
+        id serial primary key,
+        offer_id integer not null references bet_offers(id) on delete cascade,
+        participant_id integer not null references participants(id) on delete cascade,
+        amount numeric(10,2) not null,
+        status text not null default 'pending',
+        result text not null default 'pending',
+        ledger_delta numeric(10,2) not null default 0,
+        accepted_at timestamptz not null default now()
+      )
+    `;
+  })();
+
+  return bettingSchemaReady;
+}
+
+async function getBetOffers(sql: SqlClient): Promise<BetOffer[]> {
+  const [offerRows, acceptanceRows] = await Promise.all([
+    sql<BetOfferRow[]>`
+      select
+        o.id,
+        o.fixture_id,
+        o.creator_participant_id,
+        c.name as creator_name,
+        o.market,
+        o.creator_side,
+        o.opponent_side,
+        o.settlement_basis,
+        o.handicap_team,
+        o.handicap_line,
+        o.max_amount,
+        o.status,
+        o.created_at::text as created_at,
+        o.note
+      from bet_offers o
+      join participants c on c.id = o.creator_participant_id
+      order by o.created_at desc, o.id desc
+    `,
+    sql<BetAcceptanceRow[]>`
+      select
+        a.id,
+        a.offer_id,
+        a.participant_id,
+        p.name as participant_name,
+        a.amount,
+        a.status,
+        a.result,
+        a.ledger_delta,
+        a.accepted_at::text as accepted_at
+      from bet_acceptances a
+      join participants p on p.id = a.participant_id
+      order by a.accepted_at, a.id
+    `
+  ]);
+
+  const acceptancesByOffer = new Map<number, BetAcceptance[]>();
+  for (const row of acceptanceRows) {
+    const acceptance: BetAcceptance = {
+      id: row.id,
+      offerId: row.offer_id,
+      participantId: row.participant_id,
+      participantName: row.participant_name,
+      amount: toNumber(row.amount),
+      status: row.status as BetAcceptanceStatus,
+      result: row.result as BetAcceptanceResult,
+      ledgerDelta: toNumber(row.ledger_delta),
+      acceptedAt: row.accepted_at
+    };
+    const list = acceptancesByOffer.get(row.offer_id);
+    if (list) list.push(acceptance);
+    else acceptancesByOffer.set(row.offer_id, [acceptance]);
+  }
+
+  return offerRows.map((row) => {
+    const acceptances = acceptancesByOffer.get(row.id) ?? [];
+    const maxAmount = toNumber(row.max_amount);
+    const acceptedAmount = acceptances
+      .filter((acceptance) => acceptance.status !== "void")
+      .reduce((total, acceptance) => total + acceptance.amount, 0);
+
+    return {
+      id: row.id,
+      fixtureId: row.fixture_id,
+      creatorParticipantId: row.creator_participant_id,
+      creatorName: row.creator_name,
+      market: row.market as BetMarket,
+      creatorSide: row.creator_side,
+      opponentSide: row.opponent_side,
+      settlementBasis: row.settlement_basis as BetSettlementBasis,
+      handicapTeam: row.handicap_team,
+      handicapLine: toNullableNumber(row.handicap_line),
+      maxAmount,
+      acceptedAmount,
+      remainingAmount: Math.max(0, maxAmount - acceptedAmount),
+      status: row.status as BetOfferStatus,
+      createdAt: row.created_at,
+      note: row.note,
+      acceptances
+    } satisfies BetOffer;
+  });
+}
+
 export function mapTeam(row: TeamRow): Team {
   return {
     id: row.id,
@@ -78,9 +245,9 @@ export function mapTeam(row: TeamRow): Team {
 
 export async function getAppState(inviteToken?: string | null): Promise<AppState> {
   const sql = getSql();
-  await ensureOddsColumns(sql);
+  await Promise.all([ensureOddsColumns(sql), ensureBettingTables(sql)]);
 
-  const [participantRows, potRows, teamRows, drawRows, fixtureRows] = await Promise.all([
+  const [participantRows, potRows, teamRows, drawRows, fixtureRows, betOffers] = await Promise.all([
     sql<Participant[]>`
       select id, name
       from participants
@@ -151,7 +318,8 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
       left join draws ad on ad.team_id = at.id
       left join participants ap on ap.id = ad.participant_id
       order by f.kickoff
-    `
+    `,
+    getBetOffers(sql)
   ]);
 
   const participant = inviteToken
@@ -186,6 +354,7 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
       oddsHomePrice: toNullableNumber(fixture.oddsHomePrice),
       oddsAwayPrice: toNullableNumber(fixture.oddsAwayPrice)
     })),
-    teams: teamRows.map(mapTeam)
+    teams: teamRows.map(mapTeam),
+    betting: buildBettingState(participantRows, participant, betOffers)
   };
 }

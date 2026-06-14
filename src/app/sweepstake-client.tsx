@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDotDashed,
   Crown,
+  DollarSign,
   Moon,
   RefreshCw,
   Shield,
@@ -16,9 +17,20 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { AppState, Draw, Fixture, Pot, Team } from "@/lib/types";
+import type {
+  AppState,
+  BetAcceptance,
+  BetLeaderboardRow,
+  BetOffer,
+  BettingState,
+  Draw,
+  Fixture,
+  Participant,
+  Pot,
+  Team
+} from "@/lib/types";
 
-type Tab = "draw" | "pools" | "fixtures" | "results";
+type Tab = "draw" | "pools" | "bet-pool" | "fixtures" | "results";
 type Theme = "night" | "light";
 type SweepstakeClientProps = {
   token?: string;
@@ -29,6 +41,7 @@ type SweepstakeClientProps = {
 };
 
 const PRIZE_POOL = 600;
+const BET_OFFER_CREATE_MINIMUM = 50;
 const PAYOUTS = {
   champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
   runnerUp: { label: "2nd Place", percent: 30, amount: PRIZE_POOL * 0.3 },
@@ -137,6 +150,36 @@ function groupByDate(fixtures: Fixture[]) {
 
 function formatPrize(amount: number) {
   return `RM${amount.toLocaleString("en-MY")}`;
+}
+
+function formatBetAmount(amount: number) {
+  return `RM${Math.abs(amount).toLocaleString("en-MY")}`;
+}
+
+function formatSignedBetAmount(amount: number) {
+  if (amount === 0) return "RM0";
+  return `${amount > 0 ? "+" : "-"}${formatBetAmount(amount)}`;
+}
+
+function marketLabel(offer: BetOffer) {
+  return offer.market === "winner" ? "Match winner" : "Asian Handicap";
+}
+
+function settlementBasisLabel(offer: BetOffer) {
+  return offer.settlementBasis === "advance_winner" ? "Advance Winner" : "90-Min Result";
+}
+
+function settlementBasisDetail(offer: BetOffer) {
+  return offer.settlementBasis === "advance_winner"
+    ? "Includes extra time and penalties"
+    : "Normal time plus stoppage only";
+}
+
+function resultLabel(acceptance: BetAcceptance) {
+  if (acceptance.status === "pending") return "Pending";
+  if (acceptance.result === "half_win") return "Half win";
+  if (acceptance.result === "half_loss") return "Half loss";
+  return acceptance.result[0].toUpperCase() + acceptance.result.slice(1);
 }
 
 function getPrizeWinners(draws: Draw[]) {
@@ -533,6 +576,7 @@ export default function SweepstakeClient({
         {[
           ...(adminOverview ? [] : [["draw", Sparkles, "Draw"]]),
           ["pools", Users, "Pools"],
+          ["bet-pool", DollarSign, "Bet Pool"],
           ["fixtures", CalendarDays, "Fixtures"],
           ["results", Trophy, "Results"]
         ].map(([id, Icon, label]) => (
@@ -634,6 +678,15 @@ export default function SweepstakeClient({
             </article>
           ))}
         </section>
+      )}
+
+      {tab === "bet-pool" && (
+        <BetPoolPanel
+          betting={state.betting}
+          fixtures={state.fixtures}
+          participant={state.participant}
+          demoMode={demoMode}
+        />
       )}
 
       {tab === "fixtures" && (
@@ -742,6 +795,230 @@ function PrizeCard({
           {note ? ` - ${note}` : ""}
         </span>
       </div>
+    </article>
+  );
+}
+
+function BetPoolPanel({
+  betting,
+  fixtures,
+  participant,
+  demoMode
+}: {
+  betting: BettingState;
+  fixtures: Fixture[];
+  participant: Participant | null;
+  demoMode: boolean;
+}) {
+  const fixtureById = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const myRow = participant
+    ? betting.leaderboard.find((row) => row.participantId === participant.id) ?? null
+    : null;
+  const settledAcceptances = betting.offers.flatMap((offer) =>
+    offer.acceptances.filter((acceptance) => acceptance.status !== "pending")
+  );
+
+  return (
+    <section className="bet-pool-board">
+      <div className="bet-pool-header">
+        <div>
+          <p className="eyebrow">Bet Pool</p>
+          <h2>Private ledger leaderboard</h2>
+          <p>
+            Ranked by settled net profit only. Open exposure is shown separately and does not
+            change the table order.
+          </p>
+        </div>
+        <div className="bet-summary-card">
+          <span>Settled volume</span>
+          <strong>{formatBetAmount(betting.leaderboard.reduce((total, row) => total + row.settledVolume, 0) / 2)}</strong>
+          <em>{settledAcceptances.length} settled slips</em>
+        </div>
+      </div>
+
+      <BetLeaderboard rows={betting.leaderboard} />
+
+      <div className="bet-section-heading">
+        <div>
+          <p className="eyebrow">Open offers</p>
+          <h2>Available to accept</h2>
+        </div>
+        <span>{betting.openOffers.length} live</span>
+      </div>
+      <div className="bet-offer-grid">
+        {betting.openOffers.length ? (
+          betting.openOffers.map((offer) => (
+            <BetOfferCard
+              key={offer.id}
+              offer={offer}
+              fixture={fixtureById.get(offer.fixtureId) ?? null}
+              demoMode={demoMode}
+            />
+          ))
+        ) : (
+          <p className="empty">No open betting offers yet.</p>
+        )}
+      </div>
+
+      <div className="bet-section-heading">
+        <div>
+          <p className="eyebrow">My betting slip</p>
+          <h2>{participant ? `${participant.name}'s ledger` : "Invite users only"}</h2>
+        </div>
+        {myRow && <span>{formatSignedBetAmount(myRow.settledNet)} settled</span>}
+      </div>
+      <div className="bet-slip-grid">
+        {myRow ? <BetSlipSummary row={myRow} /> : <p className="empty">Open a personal invite link to see your slip.</p>}
+        <div className="bet-slip-list">
+          {betting.myOffers.map((offer) => (
+            <BetMiniSlip key={`offer-${offer.id}`} label="Created" title={offer.creatorSide} detail={marketLabel(offer)} />
+          ))}
+          {betting.myAcceptances.map((acceptance) => (
+            <BetMiniSlip
+              key={`acceptance-${acceptance.id}`}
+              label={resultLabel(acceptance)}
+              title={formatSignedBetAmount(acceptance.ledgerDelta)}
+              detail={`${formatBetAmount(acceptance.amount)} stake`}
+            />
+          ))}
+          {!betting.myOffers.length && !betting.myAcceptances.length && (
+            <p className="empty">No betting slip activity yet.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
+  return (
+    <div className="bet-leaderboard">
+      <div className="bet-table-header">
+        <span>Rank</span>
+        <span>Participant</span>
+        <span>Settled net</span>
+        <span>W / L / V</span>
+        <span>Volume</span>
+        <span>Open exposure</span>
+        <span>Open</span>
+      </div>
+      {rows.map((row) => (
+        <div className={clsx("bet-table-row", row.rank <= 3 && "podium")} key={row.participantId}>
+          <strong>#{row.rank}</strong>
+          <span>{row.participantName}</span>
+          <em className={clsx(row.settledNet > 0 && "positive", row.settledNet < 0 && "negative")}>
+            {formatSignedBetAmount(row.settledNet)}
+          </em>
+          <span>
+            {row.won} / {row.lost} / {row.void}
+          </span>
+          <span>{formatBetAmount(row.settledVolume)}</span>
+          <span>{formatBetAmount(row.openExposure)}</span>
+          <span>
+            {row.openOffers} / {row.activeAccepts}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BetOfferCard({
+  offer,
+  fixture,
+  demoMode
+}: {
+  offer: BetOffer;
+  fixture: Fixture | null;
+  demoMode: boolean;
+}) {
+  const kickoff = fixture
+    ? new Intl.DateTimeFormat("en-GB", {
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(fixture.kickoff))
+    : "Fixture pending";
+
+  return (
+    <article className="bet-offer-card">
+      <header>
+        <div>
+          <p className="eyebrow">{marketLabel(offer)}</p>
+          <h3>
+            {offer.creatorName} backs {offer.creatorSide}
+          </h3>
+        </div>
+        <span className={clsx("bet-status", offer.status)}>{offer.status}</span>
+      </header>
+      <p className="bet-fixture">
+        {fixture ? `${fixture.homeCountry} vs ${fixture.awayCountry}` : "Unknown fixture"} - {kickoff}
+      </p>
+      <div className="bet-badges">
+        <span>{settlementBasisLabel(offer)}</span>
+        <span>{settlementBasisDetail(offer)}</span>
+        <span>No min accept</span>
+        <span>{formatBetAmount(BET_OFFER_CREATE_MINIMUM)} offer floor</span>
+        <span>Against {offer.opponentSide}</span>
+      </div>
+      <div className="bet-progress">
+        <div>
+          <span>Accepted</span>
+          <strong>
+            {formatBetAmount(offer.acceptedAmount)} / {formatBetAmount(offer.maxAmount)}
+          </strong>
+        </div>
+        <div>
+          <span>Remaining</span>
+          <strong>{formatBetAmount(offer.remainingAmount)}</strong>
+        </div>
+      </div>
+      {offer.note && <p className="bet-note">{offer.note}</p>}
+      <div className="bet-acceptances">
+        {offer.acceptances.map((acceptance) => (
+          <span key={acceptance.id}>
+            {acceptance.participantName} {formatBetAmount(acceptance.amount)} {resultLabel(acceptance)}
+          </span>
+        ))}
+      </div>
+      <button className="bet-action" type="button" disabled>
+        {demoMode ? "Demo preview" : "Accept coming soon"}
+      </button>
+    </article>
+  );
+}
+
+function BetSlipSummary({ row }: { row: BetLeaderboardRow }) {
+  return (
+    <div className="bet-slip-summary">
+      <div>
+        <span>Settled net</span>
+        <strong className={clsx(row.settledNet > 0 && "positive", row.settledNet < 0 && "negative")}>
+          {formatSignedBetAmount(row.settledNet)}
+        </strong>
+      </div>
+      <div>
+        <span>Open exposure</span>
+        <strong>{formatBetAmount(row.openExposure)}</strong>
+      </div>
+      <div>
+        <span>Record</span>
+        <strong>
+          {row.won} / {row.lost} / {row.void}
+        </strong>
+      </div>
+    </div>
+  );
+}
+
+function BetMiniSlip({ label, title, detail }: { label: string; title: string; detail: string }) {
+  return (
+    <article className="bet-mini-slip">
+      <span>{label}</span>
+      <strong>{title}</strong>
+      <p>{detail}</p>
     </article>
   );
 }

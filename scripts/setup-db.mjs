@@ -117,6 +117,37 @@ await sql.begin(async (tx) => {
       add column if not exists odds_external_event_id text
   `;
 
+  await tx`
+    create table if not exists bet_offers (
+      id serial primary key,
+      fixture_id integer not null references fixtures(id) on delete cascade,
+      creator_participant_id integer not null references participants(id) on delete cascade,
+      market text not null,
+      creator_side text not null,
+      opponent_side text not null,
+      settlement_basis text not null,
+      handicap_team text,
+      handicap_line numeric(5,2),
+      max_amount numeric(10,2) not null,
+      status text not null default 'open',
+      note text,
+      created_at timestamptz not null default now()
+    )
+  `;
+
+  await tx`
+    create table if not exists bet_acceptances (
+      id serial primary key,
+      offer_id integer not null references bet_offers(id) on delete cascade,
+      participant_id integer not null references participants(id) on delete cascade,
+      amount numeric(10,2) not null,
+      status text not null default 'pending',
+      result text not null default 'pending',
+      ledger_delta numeric(10,2) not null default 0,
+      accepted_at timestamptz not null default now()
+    )
+  `;
+
   for (const pot of seed.pots) {
     await tx`
       insert into pots (id, name, label, colour)
