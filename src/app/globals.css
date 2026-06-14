@@ -233,6 +233,13 @@ button {
   height: 100%;
 }
 
+.topbar-logo {
+  flex: 0 0 auto;
+  width: clamp(78px, 13vw, 132px);
+  height: auto;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
+}
+
 .tabs {
   position: sticky;
   top: 0;
@@ -1460,6 +1467,59 @@ button {
   .trophy-mark {
     width: 58px;
     height: 58px;
+  }
+
+  .topbar-logo {
+    width: 64px;
+  }
+
+  /* History: drop the wide table and stack each settled bet into a compact
+     two-line block so nothing scrolls sideways. */
+  .bet-history {
+    overflow-x: visible;
+  }
+
+  .bet-history-row.head {
+    display: none;
+  }
+
+  .bet-history-row {
+    grid-template-columns: 1fr auto;
+    min-width: 0;
+    column-gap: 10px;
+    row-gap: 3px;
+    padding: 12px 14px;
+  }
+
+  .bet-history-row > :nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+    font-weight: 800;
+  }
+
+  .bet-history-row > :nth-child(5) {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .bet-history-row > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    color: var(--muted);
+  }
+
+  .bet-history-row > :nth-child(3) {
+    grid-column: 1;
+    grid-row: 3;
+    color: var(--muted);
+  }
+
+  .bet-history-row > :nth-child(4) {
+    grid-column: 2;
+    grid-row: 3;
+    justify-self: end;
+    color: var(--muted);
   }
 
   .tabs button {

@@ -15,8 +15,7 @@ import {
   Sparkles,
   Sun,
   Trophy,
-  Users,
-  Zap
+  Users
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -34,13 +33,12 @@ import type {
 } from "@/lib/types";
 
 type Tab = "draw" | "pools" | "bet-pool" | "fixtures" | "results";
-type Theme = "daylight" | "night" | "floodlit";
+type Theme = "daylight" | "night";
 
-const THEME_ORDER: Theme[] = ["daylight", "night", "floodlit"];
+const THEME_ORDER: Theme[] = ["daylight", "night"];
 const THEME_META: Record<Theme, { icon: typeof Sun; label: string }> = {
   daylight: { icon: Sun, label: "Daylight" },
-  night: { icon: Moon, label: "Night" },
-  floodlit: { icon: Zap, label: "Floodlit" }
+  night: { icon: Moon, label: "Night" }
 };
 type SweepstakeClientProps = {
   token?: string;
@@ -469,12 +467,12 @@ export default function SweepstakeClient({
 
   useEffect(() => {
     const saved = window.localStorage.getItem("sweepstake-theme");
-    if (saved === "light") {
-      setTheme("daylight"); // migrate the old two-theme value
+    if (saved === "daylight" || saved === "light") {
+      setTheme("daylight"); // "light" is the legacy value
       return;
     }
-    if (saved === "daylight" || saved === "night" || saved === "floodlit") {
-      setTheme(saved);
+    if (saved === "night" || saved === "floodlit") {
+      setTheme("night"); // floodlit retired — fold back to night
       return;
     }
 
@@ -573,9 +571,13 @@ export default function SweepstakeClient({
                 : `${state.allDraws.length}/48 countries claimed. Neon locks every country once.`}
           </p>
         </div>
-        <div className="trophy-mark">
-          <Trophy aria-hidden="true" />
-        </div>
+        <img
+          className="topbar-logo"
+          src="/logo-icon.svg"
+          alt="World Cup Sweepstake"
+          width={120}
+          height={99}
+        />
         {(() => {
           const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
           const NextIcon = THEME_META[nextTheme].icon;

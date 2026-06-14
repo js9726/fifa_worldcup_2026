@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 212" width="256" height="212" role="img" aria-label="World Cup Sweepstake trophy mark">
+  <defs>
+    <linearGradient id="wcGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8d676"></stop>
+      <stop offset="0.5" stop-color="#d39a23"></stop>
+      <stop offset="1" stop-color="#9a5e08"></stop>
+    </linearGradient>
+    <radialGradient id="wcGlobe" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#ffe9a8"></stop>
+      <stop offset="0.55" stop-color="#dba128"></stop>
+      <stop offset="1" stop-color="#915808"></stop>
+    </radialGradient>
+    <linearGradient id="wcGoldH" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b9801a"></stop>
+      <stop offset="0.5" stop-color="#f3c456"></stop>
+      <stop offset="1" stop-color="#b9801a"></stop>
+    </linearGradient>
+    <clipPath id="wcGlobeClip"><circle cx="128" cy="56" r="33"></circle></clipPath>
+  </defs>
+
+  
+  <g fill="none" stroke-linecap="round">
+    <path d="M52,184 C104,158 168,166 204,186" stroke="#1d6fd8" stroke-width="7"></path>
+    <path d="M62,189 C110,166 162,173 196,190" stroke="#d12b2b" stroke-width="7"></path>
+    <path d="M74,193 C116,174 156,180 186,193" stroke="#1f9d57" stroke-width="7"></path>
+  </g>
+
+  
+  <g transform="rotate(-15 44 118)">
+    <rect x="6" y="96" width="78" height="46" rx="8" fill="#14233f" stroke="url(#wcGold)" stroke-width="2"></rect>
+    <line x1="32" y1="100" x2="32" y2="138" stroke="#cf9a2e" stroke-width="1.6" stroke-dasharray="3 3"></line>
+    <g fill="#f3c456">
+      <path d="M19 104 l1.6 3.4 3.7 .4 -2.7 2.6 .7 3.7 -3.3-1.8 -3.3 1.8 .7-3.7 -2.7-2.6 3.7-.4z"></path>
+      <path d="M19 117 l1.6 3.4 3.7 .4 -2.7 2.6 .7 3.7 -3.3-1.8 -3.3 1.8 .7-3.7 -2.7-2.6 3.7-.4z"></path>
+      <path d="M19 130 l1.6 3.4 3.7 .4 -2.7 2.6 .7 3.7 -3.3-1.8 -3.3 1.8 .7-3.7 -2.7-2.6 3.7-.4z"></path>
+    </g>
+    <rect x="40" y="110" width="36" height="4" rx="2" fill="#e7c574"></rect>
+    <rect x="40" y="123" width="26" height="4" rx="2" fill="#9fb0c9"></rect>
+  </g>
+
+  
+  <g transform="rotate(8 182 122)">
+    <rect x="150" y="90" width="76" height="64" rx="9" fill="#ffffff" stroke="#14233f" stroke-width="2"></rect>
+    <rect x="150" y="90" width="76" height="20" rx="9" fill="#14233f"></rect>
+    <rect x="150" y="100" width="76" height="10" fill="#14233f"></rect>
+    <text x="188" y="104" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="10" font-weight="800" fill="#f3c456" letter-spacing="1">DRAW</text>
+    <g>
+      <rect x="158" y="118" width="7" height="7" rx="1.5" fill="#1f9d57"></rect>
+      <rect x="158" y="130" width="7" height="7" rx="1.5" fill="#d12b2b"></rect>
+      <rect x="158" y="142" width="7" height="7" rx="1.5" fill="#1d6fd8"></rect>
+    </g>
+    <g fill="#cdd6e3">
+      <rect x="170" y="120" width="30" height="3.5" rx="1.75"></rect>
+      <rect x="170" y="132" width="30" height="3.5" rx="1.75"></rect>
+      <rect x="170" y="144" width="30" height="3.5" rx="1.75"></rect>
+    </g>
+    <g fill="none" stroke="#14233f" stroke-width="1.6">
+      <rect x="206" y="117" width="9" height="9" rx="1.5"></rect>
+      <rect x="206" y="129" width="9" height="9" rx="1.5"></rect>
+      <rect x="206" y="141" width="9" height="9" rx="1.5"></rect>
+    </g>
+    <path d="M207.5 130.5 l2.4 2.4 4.2-4.6" fill="none" stroke="#d39a23" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+  </g>
+
+  
+  <g>
+    
+    <path d="M101,58 C74,64 72,104 103,112" fill="none" stroke="url(#wcGoldH)" stroke-width="10" stroke-linecap="round"></path>
+    <path d="M155,58 C182,64 184,104 153,112" fill="none" stroke="url(#wcGoldH)" stroke-width="10" stroke-linecap="round"></path>
+    
+    <path d="M104,80 C104,98 113,122 117,140 L139,140 C143,122 152,98 152,80 C143,91 113,91 104,80 Z" fill="url(#wcGold)"></path>
+    <ellipse cx="128" cy="82" rx="26" ry="6.5" fill="#b9801a"></ellipse>
+    
+    <circle cx="128" cy="56" r="33" fill="url(#wcGlobe)"></circle>
+    <g clip-path="url(#wcGlobeClip)" fill="none" stroke="#8a5410" stroke-opacity="0.32" stroke-width="2">
+      <ellipse cx="128" cy="56" rx="33" ry="11"></ellipse>
+      <ellipse cx="128" cy="56" rx="12" ry="33"></ellipse>
+      <ellipse cx="128" cy="56" rx="24" ry="33"></ellipse>
+    </g>
+    <path clip-path="url(#wcGlobeClip)" d="M118 38 c8-3 16 2 14 8 c-2 6-12 5-12 11 c0 5 8 6 6 11 c-2 4-12 3-16-2 c5-1 7-5 4-8 c-4-4 1-9 4-13 z" fill="#8a5410" fill-opacity="0.28"></path>
+    <ellipse cx="116" cy="44" rx="9" ry="6" fill="#fff3cf" fill-opacity="0.5"></ellipse>
+    
+    <path d="M112,140 L144,140 L150,158 L106,158 Z" fill="#14233f"></path>
+    <path d="M128 145 l1.8 3.8 4.2 .5 -3.1 2.9 .8 4.2 -3.7-2 -3.7 2 .8-4.2 -3.1-2.9 4.2-.5z" fill="#f3c456"></path>
+    <path d="M99,158 L157,158 L165,176 L91,176 Z" fill="url(#wcGold)"></path>
+    <rect x="91" y="174" width="74" height="4" rx="2" fill="#b9801a"></rect>
+  </g>
+</svg>
