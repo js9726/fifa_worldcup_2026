@@ -1330,7 +1330,7 @@ function BetOfferCard({
         </div>
       ) : cancellable ? (
         <button className="bet-action danger" type="button" onClick={cancel} disabled={cancelling}>
-          {cancelling ? "Cancelling..." : `Cancel (until ${BET_CANCEL_LOCK_HOURS}h before kickoff)`}
+          {cancelling ? "Cancelling..." : "Cancel offer"}
         </button>
       ) : (
         <button className="bet-action" type="button" disabled>
