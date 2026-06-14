@@ -1214,8 +1214,13 @@ function BetOfferCard({
   const beforeCancelLock = fixture
     ? new Date(fixture.kickoff).getTime() - BET_CANCEL_LOCK_HOURS * 60 * 60 * 1000 > Date.now()
     : false;
+  const hasActiveBets = offer.acceptances.some((acceptance) => acceptance.status === "pending");
   const cancellable =
-    canBet && isOwn && (offer.status === "open" || offer.status === "filled") && beforeCancelLock;
+    canBet &&
+    isOwn &&
+    (offer.status === "open" || offer.status === "filled") &&
+    // Unmatched offers can always be pulled; matched ones only before the cut-off.
+    (!hasActiveBets || beforeCancelLock);
 
   async function cancel() {
     setCancelling(true);
@@ -1228,7 +1233,11 @@ function BetOfferCard({
       return;
     }
 
-    notify("Offer cancelled. Any matched stakes were voided and refunded.");
+    notify(
+      hasActiveBets
+        ? "Offer cancelled. Matched stakes were voided and refunded."
+        : "Offer cancelled."
+    );
     await refresh();
   }
 

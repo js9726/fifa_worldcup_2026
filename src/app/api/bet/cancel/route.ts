@@ -65,9 +65,22 @@ export async function POST(request: NextRequest) {
         throw new Response("This offer can no longer be cancelled", { status: 409 });
       }
 
+      const activeRows = (await tx`
+        select count(*)::int as active
+        from bet_acceptances
+        where offer_id = ${offer.id}
+          and status = 'pending'
+      `) as Array<{ active: number }>;
+      const hasActiveBets = activeRows[0].active > 0;
+
+      // Unmatched offers can be pulled at any time. Once a bet is matched, the
+      // creator can only cancel up until the cut-off before kickoff.
       const lockMs = CANCEL_LOCK_HOURS * 60 * 60 * 1000;
-      if (new Date(offer.kickoff).getTime() - lockMs <= Date.now()) {
-        throw new Response(`Cancellation closes ${CANCEL_LOCK_HOURS} hours before kickoff`, { status: 409 });
+      if (hasActiveBets && new Date(offer.kickoff).getTime() - lockMs <= Date.now()) {
+        throw new Response(
+          `Once a bet is matched, cancellation closes ${CANCEL_LOCK_HOURS} hours before kickoff`,
+          { status: 409 }
+        );
       }
 
       // Refund any matched-but-unsettled stakes, then void the offer.
