@@ -189,8 +189,8 @@ button {
 
 .topbar > div:first-child {
   min-width: 0;
-  /* reserve room on the right for the corner-pinned logo + theme toggle */
-  padding-right: clamp(140px, 16vw, 220px);
+  /* reserve room on the right for the corner-pinned theme toggle */
+  padding-right: clamp(96px, 12vw, 150px);
 }
 
 .topbar.compact {
@@ -237,10 +237,10 @@ button {
 }
 
 .topbar-logo {
-  position: absolute;
-  right: clamp(18px, 4vw, 42px);
-  bottom: 18px;
-  width: clamp(92px, 11vw, 128px);
+  order: -1; /* sit to the LEFT of the title block on desktop */
+  flex: 0 0 auto;
+  align-self: center;
+  width: clamp(88px, 10vw, 122px);
   height: auto;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
 }
@@ -1488,9 +1488,7 @@ button {
 
   /* Logo becomes the centred hero illustration under the title. */
   .topbar-logo {
-    position: static;
-    right: auto;
-    bottom: auto;
+    order: 0;
     align-self: center;
     width: clamp(150px, 52vw, 240px);
     margin-top: 8px;
