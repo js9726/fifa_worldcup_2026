@@ -471,9 +471,27 @@ await sql.begin(async (tx) => {
 let acceptancesSettled = 0;
 let offersResolved = 0;
 let offersHeld = 0;
+let offersAutoClosed = 0;
 
 await sql.begin(async (tx) => {
   await ensureBettingTablesExist(tx);
+
+  // Close offers nobody accepted once their match has kicked off — betting on a
+  // live/finished match is no longer valid. Offers with matched stakes are left
+  // for normal settlement.
+  const autoClosed = await tx`
+    update bet_offers o
+    set status = 'closed'
+    from fixtures f
+    where f.id = o.fixture_id
+      and o.status = 'open'
+      and f.kickoff <= now()
+      and not exists (
+        select 1 from bet_acceptances a
+        where a.offer_id = o.id and a.status = 'pending'
+      )
+  `;
+  offersAutoClosed = autoClosed.count;
 
   for (const match of matches) {
     if (match.status !== "FINISHED" || !match.home || !match.away) continue;
@@ -546,7 +564,7 @@ console.log(
   `Synced ${fixturesTouched} fixture row(s) and placed ${placements.size}/48 team(s) from football-data.org (${competition}).`
 );
 console.log(
-  `Settled ${acceptancesSettled} bet slip(s) across ${offersResolved} offer(s); ${offersHeld} offer(s) held for more data.`
+  `Settled ${acceptancesSettled} bet slip(s) across ${offersResolved} offer(s); ${offersHeld} offer(s) held for more data; auto-closed ${offersAutoClosed} unaccepted offer(s) past kickoff.`
 );
 if (finishedMatchCount > finishedWithScoreCount) {
   console.log(

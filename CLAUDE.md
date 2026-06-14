@@ -70,9 +70,13 @@ not affect ordering. Bets are even money (1:1) on the line.
 
 - **Create / accept / cancel** are token-gated routes under `src/app/api/bet/*`.
   Creation only requires a positive max stake (no minimum); acceptance is row-locked
-  against over-matching and blocks self-accept; cancellation is creator-only — allowed
-  any time while the offer is unmatched, otherwise until `BET_CANCEL_LOCK_HOURS` (5h)
-  before kickoff, voiding/refunding any matched-but-unsettled stakes.
+  against over-matching, blocks self-accept, and is rejected once the match has kicked
+  off; cancellation is creator-only — allowed any time while the offer is unmatched,
+  otherwise until `BET_CANCEL_LOCK_HOURS` (5h) before kickoff, voiding/refunding any
+  matched-but-unsettled stakes.
+- **Markets close at kickoff.** Each `sync:results` run auto-closes (`status='closed'`)
+  any still-`open` offer whose match has started and that nobody accepted (no pending
+  acceptances). Offers with matched stakes go through normal settlement instead.
 - **Settlement is automatic** inside `npm run sync:results`: after scores land it
   settles `pending` slips on finished fixtures using `scripts/settlement.mjs` (pure,
   covered by `node scripts/sync-results.mjs --selftest`). AH uses quarter-line logic;
