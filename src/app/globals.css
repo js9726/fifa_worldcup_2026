@@ -1,9 +1,82 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700;1,800;1,900&display=swap");
+
+/* ============================================================================
+   Design system tokens — "stadium night". Three themes from one token set:
+   Daylight (:root, default) · Night · Floodlit.
+   ========================================================================== */
+
 :root {
+  color-scheme: light;
+
+  /* Surfaces (Daylight — default) */
+  --bg: #d7e0ee;
+  --panel: #ffffff;
+  --panel-2: #e7eef8;
+  --row: #f1f5fb;
+  --field: #ffffff;
+  --flag-bg: #ffffff;
+
+  /* Lines */
+  --line: rgba(13, 27, 46, 0.22);
+  --line-strong: rgba(150, 96, 0, 0.55);
+
+  /* Text */
+  --text: #0a1626;
+  --muted: #43556b;
+
+  /* Brand + signal */
+  --gold: #9a6400;
+  --gold-strong: #7c5100;
+  --red: #c41c1c;
+  --green: #15803d;
+  --blue: #1d4ed8;
+
+  /* Result pill swatches (fixed across all themes) */
+  --pill-win-bg: #bbf7d0;
+  --pill-win-fg: #064e3b;
+  --pill-warn-bg: #fde68a;
+  --pill-warn-fg: #713f12;
+  --pill-out-bg: #fecaca;
+  --pill-out-fg: #7f1d1d;
+
+  /* Gradients + backgrounds */
+  --grad-gold: linear-gradient(135deg, #f3c14a, #a86f0c);
+  --topbar-bg:
+    radial-gradient(120% 150% at 50% 0%, rgba(214, 142, 18, 0.28), transparent 58%),
+    linear-gradient(135deg, #ffffff, #dde6f2);
+  --body-bg:
+    radial-gradient(1100px 580px at 50% -12%, rgba(214, 142, 18, 0.18), transparent 55%),
+    linear-gradient(180deg, #e6edf7 0%, #d2dcec 100%);
+
+  /* Pot accents (draw tiers) */
+  --pot-favourite: var(--gold);
+  --pot-challenger: var(--blue);
+  --pot-outsider: var(--green);
+  --pot-underdog: var(--red);
+
+  /* Typography */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", var(--font-sans);
+  --fw-regular: 400;
+  --fw-medium: 650;
+  --fw-bold: 800;
+  --fw-heavy: 900;
+  --fw-black: 950;
+
+  /* Effects */
+  --shadow: 0 14px 36px rgba(18, 38, 70, 0.16);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+[data-theme="night"] {
   color-scheme: dark;
   --bg: #080c15;
   --panel: #131c2c;
   --panel-2: #1b2538;
   --row: #0e1623;
+  --field: #0e1623;
+  --flag-bg: #ffffff;
   --line: rgba(148, 163, 184, 0.2);
   --line-strong: rgba(251, 191, 36, 0.5);
   --text: #f3f7fc;
@@ -13,41 +86,41 @@
   --red: #f87171;
   --green: #34d399;
   --blue: #60a5fa;
-  --shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
   --topbar-bg:
     radial-gradient(120% 140% at 50% 0%, rgba(251, 191, 36, 0.18), transparent 55%),
     linear-gradient(135deg, #16223a, #0e1626);
   --body-bg:
     radial-gradient(1200px 620px at 50% -12%, rgba(251, 191, 36, 0.12), transparent 60%),
     linear-gradient(180deg, #080c15 0%, #0b1322 100%);
-  --flag-bg: #ffffff;
-  --field: #0e1623;
+  --shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-html[data-theme="light"] {
-  color-scheme: light;
-  --bg: #e8eef6;
-  --panel: #ffffff;
-  --panel-2: #f3f7fc;
-  --row: #f6f9fd;
-  --line: rgba(15, 28, 46, 0.14);
-  --line-strong: rgba(180, 120, 12, 0.45);
-  --text: #0d1b2e;
-  --muted: #51647a;
-  --gold: #b4780c;
-  --gold-strong: #92600a;
-  --red: #d12626;
-  --green: #15803d;
-  --blue: #1d4ed8;
-  --shadow: 0 14px 38px rgba(28, 50, 84, 0.13);
-  --topbar-bg:
-    radial-gradient(120% 150% at 50% 0%, rgba(245, 158, 11, 0.22), transparent 58%),
-    linear-gradient(135deg, #ffffff, #e7eff8);
-  --body-bg:
-    radial-gradient(1100px 580px at 50% -12%, rgba(245, 158, 11, 0.16), transparent 55%),
-    linear-gradient(180deg, #eef3f9 0%, #e2eaf4 100%);
+[data-theme="floodlit"] {
+  color-scheme: dark;
+  --bg: #0a1838;
+  --panel: #152951;
+  --panel-2: #1d3568;
+  --row: #102348;
+  --field: #102348;
   --flag-bg: #ffffff;
-  --field: #ffffff;
+  --line: rgba(167, 189, 230, 0.24);
+  --line-strong: rgba(255, 211, 92, 0.55);
+  --text: #f1f6ff;
+  --muted: #b1c0db;
+  --gold: #ffd24a;
+  --gold-strong: #f5a623;
+  --red: #fb8a8a;
+  --green: #4ade80;
+  --blue: #7cb0ff;
+  --topbar-bg:
+    radial-gradient(120% 150% at 50% 0%, rgba(255, 210, 90, 0.26), transparent 58%),
+    linear-gradient(135deg, #1c356a, #0e2148);
+  --body-bg:
+    radial-gradient(1200px 620px at 50% -12%, rgba(255, 210, 90, 0.16), transparent 60%),
+    linear-gradient(180deg, #0a1838 0%, #0d2150 100%);
+  --shadow: 0 18px 46px rgba(3, 12, 35, 0.55);
+  --shadow-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 * {
@@ -66,10 +139,20 @@ body {
   margin: 0;
   color: var(--text);
   background: var(--body-bg);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background-attachment: fixed;
+  font-family: var(--font-sans);
+  font-weight: var(--fw-medium);
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overflow-x: hidden;
+}
+
+h1,
+h2,
+.eyebrow,
+.bet-pool-header h2,
+.bet-section-heading h2 {
+  font-family: var(--font-display);
 }
 
 button,
@@ -114,9 +197,10 @@ button {
 .topbar h1 {
   margin: 0;
   font-size: clamp(2.2rem, 5.4vw, 5rem);
-  line-height: 0.95;
+  line-height: 0.92;
+  font-weight: var(--fw-heavy);
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
   text-wrap: balance;
 }
 
@@ -188,9 +272,9 @@ button {
 
 .tabs button.active,
 .primary-button {
-  border-color: rgba(245, 196, 81, 0.72);
-  background: linear-gradient(135deg, #f0b93f, #8d5a0b);
-  color: #0a0906;
+  border-color: var(--line-strong);
+  background: var(--grad-gold);
+  color: #1a1205;
 }
 
 .theme-toggle {
@@ -295,9 +379,7 @@ button {
   position: relative;
   overflow: hidden;
   border-color: var(--line-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    var(--shadow);
+  box-shadow: var(--shadow-inset-top), var(--shadow);
 }
 
 .pool-card::before {
@@ -952,31 +1034,62 @@ button {
   font-weight: 950;
 }
 
-.bet-result-list {
-  display: grid;
-  gap: 6px;
+.bet-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--panel-2) 82%, var(--gold) 18%);
+  font-weight: 900;
 }
 
-.bet-result-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
+.bet-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.bet-history {
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--row);
+  background: var(--panel);
+  box-shadow: var(--shadow-inset-top), var(--shadow);
 }
 
-.bet-result-row span {
+.bet-history-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.5fr) minmax(120px, 1.2fr) minmax(80px, 0.8fr) 80px minmax(120px, 1.1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 660px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.bet-history-row.head {
+  border-top: none;
   color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.bet-history-row span {
+  min-width: 0;
   font-weight: 700;
 }
 
-.bet-result-row em {
+.bet-history-row em {
   font-style: normal;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.bet-history-match strong {
+  color: var(--gold);
 }
 
 .bet-slip-summary {

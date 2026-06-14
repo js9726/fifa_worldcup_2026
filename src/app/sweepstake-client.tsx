@@ -4,6 +4,8 @@ import clsx from "clsx";
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleDotDashed,
   Crown,
   DollarSign,
@@ -13,7 +15,8 @@ import {
   Sparkles,
   Sun,
   Trophy,
-  Users
+  Users,
+  Zap
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -31,7 +34,14 @@ import type {
 } from "@/lib/types";
 
 type Tab = "draw" | "pools" | "bet-pool" | "fixtures" | "results";
-type Theme = "night" | "light";
+type Theme = "daylight" | "night" | "floodlit";
+
+const THEME_ORDER: Theme[] = ["daylight", "night", "floodlit"];
+const THEME_META: Record<Theme, { icon: typeof Sun; label: string }> = {
+  daylight: { icon: Sun, label: "Daylight" },
+  night: { icon: Moon, label: "Night" },
+  floodlit: { icon: Zap, label: "Floodlit" }
+};
 type SweepstakeClientProps = {
   token?: string;
   initialState?: AppState;
@@ -432,7 +442,7 @@ export default function SweepstakeClient({
   const [tab, setTab] = useState<Tab>(initialTab);
   const [drawingPot, setDrawingPot] = useState<number | null>(null);
   const [message, setMessage] = useState("");
-  const [theme, setTheme] = useState<Theme>("night");
+  const [theme, setTheme] = useState<Theme>("daylight");
 
   async function loadState() {
     if (demoMode) return;
@@ -459,13 +469,17 @@ export default function SweepstakeClient({
 
   useEffect(() => {
     const saved = window.localStorage.getItem("sweepstake-theme");
-    if (saved === "light" || saved === "night") {
+    if (saved === "light") {
+      setTheme("daylight"); // migrate the old two-theme value
+      return;
+    }
+    if (saved === "daylight" || saved === "night" || saved === "floodlit") {
       setTheme(saved);
       return;
     }
 
-    if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-      setTheme("light");
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setTheme("night");
     }
   }, []);
 
@@ -562,15 +576,21 @@ export default function SweepstakeClient({
         <div className="trophy-mark">
           <Trophy aria-hidden="true" />
         </div>
-        <button
-          className="theme-toggle"
-          type="button"
-          aria-pressed={theme === "light"}
-          onClick={() => setTheme((current) => (current === "night" ? "light" : "night"))}
-        >
-          {theme === "night" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
-          <span>{theme === "night" ? "Light" : "Night"}</span>
-        </button>
+        {(() => {
+          const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
+          const NextIcon = THEME_META[nextTheme].icon;
+          return (
+            <button
+              className="theme-toggle"
+              type="button"
+              title={`Switch to ${THEME_META[nextTheme].label}`}
+              onClick={() => setTheme(nextTheme)}
+            >
+              <NextIcon aria-hidden="true" />
+              <span>{THEME_META[nextTheme].label}</span>
+            </button>
+          );
+        })()}
       </section>
 
       <nav className="tabs" aria-label="Sweepstake views">
@@ -852,6 +872,13 @@ function BetPoolPanel({
       const bk = fixtureById.get(b.fixtureId)?.kickoff ?? b.createdAt;
       return new Date(bk).getTime() - new Date(ak).getTime();
     });
+  const historyRows = settledOffers.flatMap((offer) => {
+    const fixture = fixtureById.get(offer.fixtureId) ?? null;
+    return offer.acceptances
+      .filter((acceptance) => acceptance.status !== "pending")
+      .map((acceptance) => ({ offer, fixture, acceptance }));
+  });
+  const [historyOpen, setHistoryOpen] = useState(false);
   const canBet = !demoMode && Boolean(participant) && Boolean(token);
 
   return (
@@ -942,69 +969,60 @@ function BetPoolPanel({
           <p className="eyebrow">History</p>
           <h2>Settled bets &amp; results</h2>
         </div>
-        <span>{settledOffers.length} done</span>
+        <button
+          className="bet-toggle"
+          type="button"
+          aria-expanded={historyOpen}
+          onClick={() => setHistoryOpen((open) => !open)}
+        >
+          <span>{historyRows.length} done</span>
+          {historyOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        </button>
       </div>
-      <div className="bet-offer-grid">
-        {settledOffers.length ? (
-          settledOffers.map((offer) => (
-            <BetHistoryCard key={offer.id} offer={offer} fixture={fixtureById.get(offer.fixtureId) ?? null} />
-          ))
+      {historyOpen &&
+        (historyRows.length ? (
+          <div className="bet-history">
+            <div className="bet-history-row head">
+              <span>Match</span>
+              <span>Pick</span>
+              <span>Taker</span>
+              <span>Stake</span>
+              <span>Result</span>
+            </div>
+            {historyRows.map(({ offer, fixture, acceptance }) => {
+              const scoreKnown = fixture && fixture.homeScore !== null && fixture.awayScore !== null;
+              return (
+                <div className="bet-history-row" key={acceptance.id}>
+                  <span className="bet-history-match">
+                    {fixture ? `${fixture.homeCountry} v ${fixture.awayCountry}` : "Unknown"}
+                    {scoreKnown && (
+                      <strong className="bet-score">
+                        {" "}
+                        {fixture!.homeScore}–{fixture!.awayScore}
+                      </strong>
+                    )}
+                  </span>
+                  <span>
+                    {offer.creatorName} · {offer.creatorSide}
+                  </span>
+                  <span>{acceptance.participantName}</span>
+                  <span>{formatBetAmount(acceptance.amount)}</span>
+                  <em
+                    className={clsx(
+                      acceptance.ledgerDelta > 0 && "positive",
+                      acceptance.ledgerDelta < 0 && "negative"
+                    )}
+                  >
+                    {resultLabel(acceptance)} {formatSignedBetAmount(acceptance.ledgerDelta)}
+                  </em>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <p className="empty">No settled bets yet. Results show here once matches finish.</p>
-        )}
-      </div>
+        ))}
     </section>
-  );
-}
-
-function BetHistoryCard({ offer, fixture }: { offer: BetOffer; fixture: Fixture | null }) {
-  const settled = offer.acceptances.filter((acceptance) => acceptance.status !== "pending");
-  const scoreKnown = fixture && fixture.homeScore !== null && fixture.awayScore !== null;
-
-  return (
-    <article className="bet-offer-card">
-      <header>
-        <div>
-          <p className="eyebrow">{marketLabel(offer)}</p>
-          <h3>
-            {offer.creatorName} backed {offer.creatorSide}
-          </h3>
-        </div>
-        <span className={clsx("bet-status", offer.status)}>{offer.status}</span>
-      </header>
-      <p className="bet-fixture">
-        {fixture ? `${fixture.homeCountry} vs ${fixture.awayCountry}` : "Unknown fixture"}
-        {scoreKnown && (
-          <strong className="bet-score">
-            {" "}
-            {fixture!.homeScore}–{fixture!.awayScore}
-          </strong>
-        )}
-        {" · "}
-        {settlementBasisLabel(offer)}
-      </p>
-      <div className="bet-result-list">
-        {settled.length ? (
-          settled.map((acceptance) => (
-            <div className="bet-result-row" key={acceptance.id}>
-              <span>
-                {acceptance.participantName} · {formatBetAmount(acceptance.amount)}
-              </span>
-              <em
-                className={clsx(
-                  acceptance.ledgerDelta > 0 && "positive",
-                  acceptance.ledgerDelta < 0 && "negative"
-                )}
-              >
-                {resultLabel(acceptance)} {formatSignedBetAmount(acceptance.ledgerDelta)}
-              </em>
-            </div>
-          ))
-        ) : (
-          <p className="empty">No matched stakes.</p>
-        )}
-      </div>
-    </article>
   );
 }
 
