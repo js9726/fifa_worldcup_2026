@@ -845,6 +845,13 @@ function BetPoolPanel({
   const settledAcceptances = betting.offers.flatMap((offer) =>
     offer.acceptances.filter((acceptance) => acceptance.status !== "pending")
   );
+  const settledOffers = betting.offers
+    .filter((offer) => offer.acceptances.some((acceptance) => acceptance.status !== "pending"))
+    .sort((a, b) => {
+      const ak = fixtureById.get(a.fixtureId)?.kickoff ?? a.createdAt;
+      const bk = fixtureById.get(b.fixtureId)?.kickoff ?? b.createdAt;
+      return new Date(bk).getTime() - new Date(ak).getTime();
+    });
   const canBet = !demoMode && Boolean(participant) && Boolean(token);
 
   return (
@@ -929,7 +936,75 @@ function BetPoolPanel({
           )}
         </div>
       </div>
+
+      <div className="bet-section-heading">
+        <div>
+          <p className="eyebrow">History</p>
+          <h2>Settled bets &amp; results</h2>
+        </div>
+        <span>{settledOffers.length} done</span>
+      </div>
+      <div className="bet-offer-grid">
+        {settledOffers.length ? (
+          settledOffers.map((offer) => (
+            <BetHistoryCard key={offer.id} offer={offer} fixture={fixtureById.get(offer.fixtureId) ?? null} />
+          ))
+        ) : (
+          <p className="empty">No settled bets yet. Results show here once matches finish.</p>
+        )}
+      </div>
     </section>
+  );
+}
+
+function BetHistoryCard({ offer, fixture }: { offer: BetOffer; fixture: Fixture | null }) {
+  const settled = offer.acceptances.filter((acceptance) => acceptance.status !== "pending");
+  const scoreKnown = fixture && fixture.homeScore !== null && fixture.awayScore !== null;
+
+  return (
+    <article className="bet-offer-card">
+      <header>
+        <div>
+          <p className="eyebrow">{marketLabel(offer)}</p>
+          <h3>
+            {offer.creatorName} backed {offer.creatorSide}
+          </h3>
+        </div>
+        <span className={clsx("bet-status", offer.status)}>{offer.status}</span>
+      </header>
+      <p className="bet-fixture">
+        {fixture ? `${fixture.homeCountry} vs ${fixture.awayCountry}` : "Unknown fixture"}
+        {scoreKnown && (
+          <strong className="bet-score">
+            {" "}
+            {fixture!.homeScore}–{fixture!.awayScore}
+          </strong>
+        )}
+        {" · "}
+        {settlementBasisLabel(offer)}
+      </p>
+      <div className="bet-result-list">
+        {settled.length ? (
+          settled.map((acceptance) => (
+            <div className="bet-result-row" key={acceptance.id}>
+              <span>
+                {acceptance.participantName} · {formatBetAmount(acceptance.amount)}
+              </span>
+              <em
+                className={clsx(
+                  acceptance.ledgerDelta > 0 && "positive",
+                  acceptance.ledgerDelta < 0 && "negative"
+                )}
+              >
+                {resultLabel(acceptance)} {formatSignedBetAmount(acceptance.ledgerDelta)}
+              </em>
+            </div>
+          ))
+        ) : (
+          <p className="empty">No matched stakes.</p>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -1210,7 +1285,9 @@ function BetOfferCard({
   const [stake, setStake] = useState<number>(0);
   const [accepting, setAccepting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
-  const acceptable = canBet && !isOwn && offer.status === "open" && offer.remainingAmount > 0;
+  const matchStarted = fixture ? new Date(fixture.kickoff).getTime() <= Date.now() : false;
+  const acceptable =
+    canBet && !isOwn && offer.status === "open" && offer.remainingAmount > 0 && !matchStarted;
   const beforeCancelLock = fixture
     ? new Date(fixture.kickoff).getTime() - BET_CANCEL_LOCK_HOURS * 60 * 60 * 1000 > Date.now()
     : false;
@@ -1352,7 +1429,9 @@ function BetOfferCard({
                 ? "Invite link required"
                 : offer.remainingAmount <= 0
                   ? "Fully matched"
-                  : "Closed"}
+                  : matchStarted
+                    ? "Betting closed"
+                    : "Closed"}
         </button>
       )}
     </article>
