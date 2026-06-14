@@ -832,6 +832,84 @@ button {
   opacity: 0.75;
 }
 
+.bet-action.gold {
+  color: #1a1205;
+  background: var(--gold);
+  border-color: var(--gold);
+}
+
+.bet-create {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.bet-create-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bet-create-head h2 {
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.bet-create-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.bet-create-form label,
+.bet-accept-row {
+  display: grid;
+  gap: 6px;
+}
+
+.bet-create-form label > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.bet-create-note {
+  grid-column: 1 / -1;
+}
+
+.bet-create-form select,
+.bet-create-form input,
+.bet-accept-row input {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--row);
+  font-weight: 700;
+}
+
+.bet-create-form .bet-action {
+  min-height: 40px;
+}
+
+.bet-accept-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.bet-accept-row .bet-action {
+  justify-self: stretch;
+}
+
 .bet-slip-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

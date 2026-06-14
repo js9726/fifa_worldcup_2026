@@ -686,6 +686,9 @@ export default function SweepstakeClient({
           fixtures={state.fixtures}
           participant={state.participant}
           demoMode={demoMode}
+          token={token}
+          refresh={loadState}
+          notify={setMessage}
         />
       )}
 
@@ -799,16 +802,40 @@ function PrizeCard({
   );
 }
 
+const HANDICAP_LINES: number[] = (() => {
+  const lines: number[] = [];
+  for (let value = -3; value <= 3 + 1e-9; value += 0.25) {
+    lines.push(Math.round(value * 100) / 100);
+  }
+  return lines;
+})();
+
+async function postBet(path: string, payload: Record<string, unknown>) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = (await response.json().catch(() => ({}))) as { error?: string };
+  return { ok: response.ok, error: data.error };
+}
+
 function BetPoolPanel({
   betting,
   fixtures,
   participant,
-  demoMode
+  demoMode,
+  token,
+  refresh,
+  notify
 }: {
   betting: BettingState;
   fixtures: Fixture[];
   participant: Participant | null;
   demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
 }) {
   const fixtureById = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
   const myRow = participant
@@ -817,6 +844,7 @@ function BetPoolPanel({
   const settledAcceptances = betting.offers.flatMap((offer) =>
     offer.acceptances.filter((acceptance) => acceptance.status !== "pending")
   );
+  const canBet = !demoMode && Boolean(participant) && Boolean(token);
 
   return (
     <section className="bet-pool-board">
@@ -836,6 +864,15 @@ function BetPoolPanel({
         </div>
       </div>
 
+      <CreateOfferForm
+        fixtures={fixtures}
+        canBet={canBet}
+        demoMode={demoMode}
+        token={token}
+        refresh={refresh}
+        notify={notify}
+      />
+
       <BetLeaderboard rows={betting.leaderboard} />
 
       <div className="bet-section-heading">
@@ -853,6 +890,11 @@ function BetPoolPanel({
               offer={offer}
               fixture={fixtureById.get(offer.fixtureId) ?? null}
               demoMode={demoMode}
+              canBet={canBet}
+              isOwn={Boolean(participant) && offer.creatorParticipantId === participant!.id}
+              token={token}
+              refresh={refresh}
+              notify={notify}
             />
           ))
         ) : (
@@ -923,15 +965,281 @@ function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
   );
 }
 
+function CreateOfferForm({
+  fixtures,
+  canBet,
+  demoMode,
+  token,
+  refresh,
+  notify
+}: {
+  fixtures: Fixture[];
+  canBet: boolean;
+  demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
+}) {
+  const openFixtures = useMemo(
+    () =>
+      fixtures
+        .filter((fixture) => fixture.homeScore === null && fixture.awayScore === null)
+        .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
+    [fixtures]
+  );
+
+  const [open, setOpen] = useState(false);
+  const [fixtureId, setFixtureId] = useState<number | null>(null);
+  const [market, setMarket] = useState<BetOffer["market"]>("winner");
+  const [backedCountry, setBackedCountry] = useState("");
+  const [settlementBasis, setSettlementBasis] = useState<BetOffer["settlementBasis"]>("advance_winner");
+  const [handicapLine, setHandicapLine] = useState(-0.5);
+  const [maxAmount, setMaxAmount] = useState(BET_OFFER_CREATE_MINIMUM);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const selectedFixture = openFixtures.find((fixture) => fixture.id === fixtureId) ?? null;
+
+  useEffect(() => {
+    if (!selectedFixture && openFixtures.length) {
+      setFixtureId(openFixtures[0].id);
+    }
+  }, [openFixtures, selectedFixture]);
+
+  useEffect(() => {
+    if (selectedFixture) {
+      setBackedCountry((current) =>
+        current === selectedFixture.homeCountry || current === selectedFixture.awayCountry
+          ? current
+          : selectedFixture.homeCountry
+      );
+    }
+  }, [selectedFixture]);
+
+  function changeMarket(next: BetOffer["market"]) {
+    setMarket(next);
+    setSettlementBasis(next === "winner" ? "advance_winner" : "ninety_minutes");
+  }
+
+  async function submit() {
+    if (!selectedFixture || !backedCountry) {
+      notify("Pick a fixture and the team you are backing.");
+      return;
+    }
+    if (maxAmount < BET_OFFER_CREATE_MINIMUM) {
+      notify(`Offers must be at least ${formatBetAmount(BET_OFFER_CREATE_MINIMUM)}.`);
+      return;
+    }
+
+    setSubmitting(true);
+    notify("Posting your offer...");
+    const { ok, error } = await postBet("/api/bet/offer", {
+      token,
+      fixtureId: selectedFixture.id,
+      market,
+      backedCountry,
+      settlementBasis,
+      handicapLine: market === "asian_handicap" ? handicapLine : null,
+      maxAmount,
+      note: note.trim() || null
+    });
+    setSubmitting(false);
+
+    if (!ok) {
+      notify(error ?? "Could not create offer.");
+      return;
+    }
+
+    notify("Offer posted. Other players can accept it now.");
+    setNote("");
+    setMaxAmount(BET_OFFER_CREATE_MINIMUM);
+    setOpen(false);
+    await refresh();
+  }
+
+  if (!canBet) {
+    return (
+      <div className="bet-create">
+        <div className="bet-create-head">
+          <div>
+            <p className="eyebrow">Create offer</p>
+            <h2>Post a bet to the pool</h2>
+          </div>
+        </div>
+        <p className="empty">
+          {demoMode
+            ? "Open your personal invite link to create and accept real offers."
+            : "Open your personal invite link to create and accept offers."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bet-create">
+      <div className="bet-create-head">
+        <div>
+          <p className="eyebrow">Create offer</p>
+          <h2>Post a bet to the pool</h2>
+        </div>
+        <button className="bet-action gold" type="button" onClick={() => setOpen((value) => !value)}>
+          {open ? "Close" : "New offer"}
+        </button>
+      </div>
+
+      {open &&
+        (openFixtures.length ? (
+          <div className="bet-create-form">
+            <label>
+              <span>Fixture</span>
+              <select
+                value={fixtureId ?? ""}
+                onChange={(event) => setFixtureId(Number(event.target.value))}
+              >
+                {openFixtures.map((fixture) => (
+                  <option key={fixture.id} value={fixture.id}>
+                    {fixture.homeCountry} vs {fixture.awayCountry} -{" "}
+                    {new Intl.DateTimeFormat("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    }).format(new Date(fixture.kickoff))}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span>Market</span>
+              <select value={market} onChange={(event) => changeMarket(event.target.value as BetOffer["market"])}>
+                <option value="winner">Match winner</option>
+                <option value="asian_handicap">Asian Handicap</option>
+              </select>
+            </label>
+
+            <label>
+              <span>You back</span>
+              <select value={backedCountry} onChange={(event) => setBackedCountry(event.target.value)}>
+                {selectedFixture && (
+                  <>
+                    <option value={selectedFixture.homeCountry}>{selectedFixture.homeCountry}</option>
+                    <option value={selectedFixture.awayCountry}>{selectedFixture.awayCountry}</option>
+                  </>
+                )}
+              </select>
+            </label>
+
+            {market === "asian_handicap" && (
+              <label>
+                <span>Handicap line</span>
+                <select value={handicapLine} onChange={(event) => setHandicapLine(Number(event.target.value))}>
+                  {HANDICAP_LINES.map((line) => (
+                    <option key={line} value={line}>
+                      {backedCountry || "Your team"} {formatHandicapLine(line)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label>
+              <span>Settlement basis</span>
+              <select
+                value={settlementBasis}
+                onChange={(event) => setSettlementBasis(event.target.value as BetOffer["settlementBasis"])}
+              >
+                <option value="advance_winner">Advance Winner (incl. ET/pens)</option>
+                <option value="ninety_minutes">90-Min Result</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Max stake (RM)</span>
+              <input
+                type="number"
+                min={BET_OFFER_CREATE_MINIMUM}
+                step={10}
+                value={maxAmount}
+                onChange={(event) => setMaxAmount(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="bet-create-note">
+              <span>Note (optional)</span>
+              <input
+                type="text"
+                maxLength={280}
+                value={note}
+                placeholder="Add context for the other players"
+                onChange={(event) => setNote(event.target.value)}
+              />
+            </label>
+
+            <button className="bet-action gold" type="button" onClick={submit} disabled={submitting}>
+              {submitting ? "Posting..." : "Post offer"}
+            </button>
+          </div>
+        ) : (
+          <p className="empty">No upcoming fixtures are open for new offers right now.</p>
+        ))}
+    </div>
+  );
+}
+
 function BetOfferCard({
   offer,
   fixture,
-  demoMode
+  demoMode,
+  canBet,
+  isOwn,
+  token,
+  refresh,
+  notify
 }: {
   offer: BetOffer;
   fixture: Fixture | null;
   demoMode: boolean;
+  canBet: boolean;
+  isOwn: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
 }) {
+  const [stake, setStake] = useState<number>(0);
+  const [accepting, setAccepting] = useState(false);
+  const acceptable = canBet && !isOwn && offer.status === "open" && offer.remainingAmount > 0;
+
+  async function accept() {
+    const amount = stake > 0 ? stake : offer.remainingAmount;
+    if (amount <= 0) {
+      notify("Enter a stake to accept.");
+      return;
+    }
+    if (amount > offer.remainingAmount + 1e-9) {
+      notify(`Only ${formatBetAmount(offer.remainingAmount)} remaining on this offer.`);
+      return;
+    }
+
+    setAccepting(true);
+    notify(`Accepting ${formatBetAmount(amount)}...`);
+    const { ok, error } = await postBet("/api/bet/accept", {
+      token,
+      offerId: offer.id,
+      amount
+    });
+    setAccepting(false);
+
+    if (!ok) {
+      notify(error ?? "Could not accept offer.");
+      return;
+    }
+
+    notify(`You took ${formatBetAmount(amount)} of ${offer.creatorName}'s offer.`);
+    setStake(0);
+    await refresh();
+  }
+
   const kickoff = fixture
     ? new Intl.DateTimeFormat("en-GB", {
         weekday: "short",
@@ -983,9 +1291,34 @@ function BetOfferCard({
           </span>
         ))}
       </div>
-      <button className="bet-action" type="button" disabled>
-        {demoMode ? "Demo preview" : "Accept coming soon"}
-      </button>
+      {acceptable ? (
+        <div className="bet-accept-row">
+          <input
+            type="number"
+            min={1}
+            step={10}
+            max={offer.remainingAmount}
+            value={stake || ""}
+            placeholder={`Up to ${formatBetAmount(offer.remainingAmount)}`}
+            onChange={(event) => setStake(Number(event.target.value))}
+          />
+          <button className="bet-action gold" type="button" onClick={accept} disabled={accepting}>
+            {accepting ? "Accepting..." : "Accept"}
+          </button>
+        </div>
+      ) : (
+        <button className="bet-action" type="button" disabled>
+          {demoMode
+            ? "Demo preview"
+            : isOwn
+              ? "Your offer"
+              : !canBet
+                ? "Invite link required"
+                : offer.remainingAmount <= 0
+                  ? "Fully matched"
+                  : "Closed"}
+        </button>
+      )}
     </article>
   );
 }

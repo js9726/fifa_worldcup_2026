@@ -100,7 +100,7 @@ function ensureOddsColumns(sql: SqlClient) {
   return oddsSchemaReady;
 }
 
-function ensureBettingTables(sql: SqlClient) {
+export function ensureBettingTables(sql: SqlClient = getSql()) {
   bettingSchemaReady ??= (async () => {
     await sql`
       create table if not exists bet_offers (
