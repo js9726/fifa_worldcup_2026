@@ -572,11 +572,18 @@ export default function SweepstakeClient({
           </p>
         </div>
         <img
-          className="topbar-logo"
+          className="topbar-logo topbar-logo--icon"
           src="/wc-logo-icon.png"
           alt="World Cup Sweepstake"
           width={124}
           height={125}
+        />
+        <img
+          className="topbar-logo topbar-logo--full"
+          src="/wc-logo-full.png"
+          alt="World Cup Sweepstake"
+          width={260}
+          height={173}
         />
         {(() => {
           const nextTheme = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];

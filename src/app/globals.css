@@ -245,6 +245,33 @@ button {
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.3));
 }
 
+/* The full landscape lockup only appears on wide screens (see min-width query
+   below); the square mark is the default everywhere else. */
+.topbar-logo--full {
+  display: none;
+}
+
+@media (min-width: 1001px) {
+  .topbar-logo--full {
+    display: block;
+    width: clamp(190px, 19vw, 250px);
+  }
+
+  .topbar-logo--icon {
+    display: none;
+  }
+
+  /* Night theme: the full lockup's navy "WORLD CUP" wordmark is unreadable on
+     the dark header, so keep the square mark instead. */
+  [data-theme="night"] .topbar-logo--full {
+    display: none;
+  }
+
+  [data-theme="night"] .topbar-logo--icon {
+    display: block;
+  }
+}
+
 .tabs {
   position: sticky;
   top: 0;
