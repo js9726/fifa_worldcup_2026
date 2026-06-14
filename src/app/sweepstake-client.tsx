@@ -41,7 +41,7 @@ type SweepstakeClientProps = {
 };
 
 const PRIZE_POOL = 600;
-const BET_OFFER_CREATE_MINIMUM = 50;
+const BET_OFFER_DEFAULT_STAKE = 50;
 const BET_CANCEL_LOCK_HOURS = 5;
 const PAYOUTS = {
   champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
@@ -995,7 +995,7 @@ function CreateOfferForm({
   const [backedCountry, setBackedCountry] = useState("");
   const [settlementBasis, setSettlementBasis] = useState<BetOffer["settlementBasis"]>("advance_winner");
   const [handicapLine, setHandicapLine] = useState(-0.5);
-  const [maxAmount, setMaxAmount] = useState(BET_OFFER_CREATE_MINIMUM);
+  const [maxAmount, setMaxAmount] = useState(BET_OFFER_DEFAULT_STAKE);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -1027,8 +1027,8 @@ function CreateOfferForm({
       notify("Pick a fixture and the team you are backing.");
       return;
     }
-    if (maxAmount < BET_OFFER_CREATE_MINIMUM) {
-      notify(`Offers must be at least ${formatBetAmount(BET_OFFER_CREATE_MINIMUM)}.`);
+    if (!(maxAmount > 0)) {
+      notify("Enter a max stake greater than zero.");
       return;
     }
 
@@ -1053,7 +1053,7 @@ function CreateOfferForm({
 
     notify("Offer posted. Other players can accept it now.");
     setNote("");
-    setMaxAmount(BET_OFFER_CREATE_MINIMUM);
+    setMaxAmount(BET_OFFER_DEFAULT_STAKE);
     setOpen(false);
     await refresh();
   }
@@ -1159,7 +1159,7 @@ function CreateOfferForm({
               <span>Max stake (RM)</span>
               <input
                 type="number"
-                min={BET_OFFER_CREATE_MINIMUM}
+                min={1}
                 step={10}
                 value={maxAmount}
                 onChange={(event) => setMaxAmount(Number(event.target.value))}
@@ -1298,8 +1298,7 @@ function BetOfferCard({
       <div className="bet-badges">
         <span>{settlementBasisLabel(offer)}</span>
         <span>{settlementBasisDetail(offer)}</span>
-        <span>No min accept</span>
-        <span>{formatBetAmount(BET_OFFER_CREATE_MINIMUM)} offer floor</span>
+        <span>No minimum stake</span>
         <span>Against {offer.opponentSide}</span>
       </div>
       <div className="bet-progress">

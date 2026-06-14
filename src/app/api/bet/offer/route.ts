@@ -7,7 +7,6 @@ export const dynamic = "force-dynamic";
 
 const MARKETS = new Set(["winner", "asian_handicap"]);
 const SETTLEMENT_BASES = new Set(["advance_winner", "ninety_minutes"]);
-const OFFER_FLOOR = 50;
 
 type OfferBody = {
   token?: string;
@@ -48,8 +47,8 @@ export async function POST(request: NextRequest) {
   const market = body.market as "winner" | "asian_handicap";
   const maxAmount = Number(body.maxAmount);
 
-  if (!Number.isFinite(maxAmount) || maxAmount < OFFER_FLOOR) {
-    return NextResponse.json({ error: `Offer must be at least RM${OFFER_FLOOR}` }, { status: 400 });
+  if (!Number.isFinite(maxAmount) || maxAmount <= 0) {
+    return NextResponse.json({ error: "Offer stake must be greater than zero" }, { status: 400 });
   }
 
   let handicapLine: number | null = null;
