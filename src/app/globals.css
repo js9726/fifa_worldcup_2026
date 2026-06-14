@@ -1453,15 +1453,23 @@ button {
   .shell {
     width: min(100% - 18px, 680px);
     padding-top: 10px;
+    padding-bottom: calc(86px + env(safe-area-inset-bottom));
   }
 
   .topbar {
-    min-height: 116px;
-    padding: 18px;
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+    min-height: 0;
+    padding: 22px 18px 20px;
   }
 
   .topbar h1 {
     font-size: clamp(2rem, 12vw, 3.6rem);
+  }
+
+  .topbar > div:first-child {
+    width: 100%;
   }
 
   .trophy-mark {
@@ -1469,8 +1477,11 @@ button {
     height: 58px;
   }
 
+  /* Logo becomes the centred hero illustration under the title. */
   .topbar-logo {
-    width: 64px;
+    align-self: center;
+    width: clamp(150px, 52vw, 240px);
+    margin-top: 8px;
   }
 
   /* History: drop the wide table and stack each settled bet into a compact
@@ -1522,13 +1533,35 @@ button {
     color: var(--muted);
   }
 
+  /* Tabs become a fixed bottom navigation bar (icon over label). */
+  .tabs {
+    position: fixed;
+    top: auto;
+    inset: auto 0 0 0;
+    z-index: 20;
+    gap: 2px;
+    padding: 8px 6px calc(8px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--panel) 90%, transparent);
+    border-top: 1px solid var(--line);
+  }
+
   .tabs button {
-    min-height: 52px;
-    padding: 6px;
+    flex-direction: column;
+    gap: 3px;
+    min-height: 56px;
+    padding: 6px 2px;
+    border-radius: 10px;
+    font-size: 0.64rem;
+  }
+
+  .tabs button svg {
+    width: 20px;
+    height: 20px;
   }
 
   .tabs button span {
-    display: none;
+    display: block;
+    font-size: 0.64rem;
   }
 
   .draw-grid,
@@ -1541,13 +1574,13 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .topbar {
-    align-items: flex-start;
-  }
-
   .theme-toggle {
-    order: 3;
-    width: 100%;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: auto;
+    min-height: 34px;
+    padding: 0 12px;
   }
 
   .team-tile {

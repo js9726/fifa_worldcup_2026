@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Trophy } from "lucide-react";
 
 export default function HomePage() {
   return (
@@ -9,9 +8,13 @@ export default function HomePage() {
           <p className="eyebrow">Invite-only live draw</p>
           <h1>World Cup 2026 Pools</h1>
         </div>
-        <div className="trophy-mark">
-          <Trophy aria-hidden="true" />
-        </div>
+        <img
+          className="topbar-logo"
+          src="/wc-logo-icon.png"
+          alt="World Cup Sweepstake"
+          width={124}
+          height={125}
+        />
       </section>
       <section className="home-panel">
         <h2>Private sweepstake dashboard</h2>
