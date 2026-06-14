@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import postgres from "postgres";
+import { ahOutcome, settleForAccepter } from "./settlement.mjs";
 
 const root = process.cwd();
 const SELFTEST = process.argv.includes("--selftest");
@@ -233,6 +234,58 @@ function runSelfTest() {
     expect(`"${apiName}" -> "${dbName}"`, resolveCountry(apiName) === dbName);
   }
 
+  // --- Bet settlement maths -------------------------------------------------
+  expect("AH adjusted +0.5 -> win", ahOutcome(0.5) === "win");
+  expect("AH adjusted +0.25 -> half win", ahOutcome(0.25) === "half_win");
+  expect("AH adjusted 0 -> push", ahOutcome(0) === "push");
+  expect("AH adjusted -0.25 -> half loss", ahOutcome(-0.25) === "half_loss");
+  expect("AH adjusted -1 -> loss", ahOutcome(-1) === "loss");
+
+  const winnerFixture = {
+    homeCountry: "Argentina",
+    awayCountry: "France",
+    fullHome: 3,
+    fullAway: 3,
+    ninetyHome: 2,
+    ninetyAway: 2,
+    overallWinner: "HOME"
+  };
+  const advanceLoss = settleForAccepter(
+    { market: "winner", creatorSide: "Argentina", settlementBasis: "advance_winner" },
+    winnerFixture
+  );
+  expect("advance winner: accepter loses when backed side advances", advanceLoss?.result === "loss" && advanceLoss?.deltaFactor === -1);
+  const ninetyVoid = settleForAccepter(
+    { market: "winner", creatorSide: "Argentina", settlementBasis: "ninety_minutes" },
+    winnerFixture
+  );
+  expect("90-min winner: a 90-min draw voids the winner bet", ninetyVoid?.result === "void");
+
+  const ahFixture = { homeCountry: "Spain", awayCountry: "Cape Verde", fullHome: 4, fullAway: 0, ninetyHome: 4, ninetyAway: 0 };
+  const ahLoss = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Spain", handicapLine: -1.5, settlementBasis: "ninety_minutes" },
+    ahFixture
+  );
+  expect("AH -1.5 covered: accepter loses", ahLoss?.result === "loss" && ahLoss?.deltaFactor === -1);
+
+  const ahPush = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "United States", handicapLine: 0, settlementBasis: "ninety_minutes" },
+    { homeCountry: "United States", awayCountry: "Paraguay", ninetyHome: 2, ninetyAway: 2, fullHome: 2, fullAway: 2 }
+  );
+  expect("AH level ball drawn: void/refund", ahPush?.result === "void" && ahPush?.deltaFactor === 0);
+
+  const ahHalf = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Sweden", handicapLine: -0.75, settlementBasis: "ninety_minutes" },
+    { homeCountry: "Sweden", awayCountry: "Tunisia", ninetyHome: 1, ninetyAway: 0, fullHome: 1, fullAway: 0 }
+  );
+  expect("AH -0.75 won by one: accepter half loss", ahHalf?.result === "half_loss" && ahHalf?.deltaFactor === -0.5);
+
+  const held = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Brazil", handicapLine: -0.5, settlementBasis: "ninety_minutes" },
+    { homeCountry: "Brazil", awayCountry: "Haiti", ninetyHome: null, ninetyAway: null, fullHome: 2, fullAway: 0 }
+  );
+  expect("missing 90-min score holds the slip (null)", held === null);
+
   let failed = 0;
   for (const { label, ok } of checks) {
     console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
@@ -280,6 +333,10 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
   away: resolveCountry(m.awayTeam?.name),
   homeScore: m.score?.fullTime?.home ?? null,
   awayScore: m.score?.fullTime?.away ?? null,
+  // Regular-time (90') score for `ninety_minutes` settlement. Falls back to the
+  // full-time score when the match never went past regulation.
+  ninetyHome: m.score?.regularTime?.home ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.home ?? null : null),
+  ninetyAway: m.score?.regularTime?.away ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.away ?? null : null),
   winner:
     m.score?.winner === "HOME_TEAM"
       ? "HOME"
@@ -407,10 +464,89 @@ await sql.begin(async (tx) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Settle peer-to-peer bets on finished fixtures (idempotent: only pending slips).
+// ---------------------------------------------------------------------------
+
+let acceptancesSettled = 0;
+let offersResolved = 0;
+let offersHeld = 0;
+
+await sql.begin(async (tx) => {
+  await ensureBettingTablesExist(tx);
+
+  for (const match of matches) {
+    if (match.status !== "FINISHED" || !match.home || !match.away) continue;
+    if (match.homeScore === null || match.awayScore === null) continue;
+
+    const fixtureRows = await tx`select id from fixtures where external_id = ${match.externalId} limit 1`;
+    if (!fixtureRows.length) continue;
+    const fixtureId = fixtureRows[0].id;
+
+    const offers = await tx`
+      select id, market, creator_side, opponent_side, settlement_basis, handicap_team, handicap_line
+      from bet_offers
+      where fixture_id = ${fixtureId}
+        and status in ('open', 'filled')
+    `;
+    if (!offers.length) continue;
+
+    const fixtureForSettle = {
+      homeCountry: match.home,
+      awayCountry: match.away,
+      fullHome: match.homeScore,
+      fullAway: match.awayScore,
+      ninetyHome: match.ninetyHome,
+      ninetyAway: match.ninetyAway,
+      overallWinner: match.winner
+    };
+
+    for (const offer of offers) {
+      const outcome = settleForAccepter(
+        {
+          market: offer.market,
+          creatorSide: offer.creator_side,
+          settlementBasis: offer.settlement_basis,
+          handicapTeam: offer.handicap_team,
+          handicapLine: offer.handicap_line === null ? null : Number(offer.handicap_line)
+        },
+        fixtureForSettle
+      );
+
+      if (!outcome) {
+        offersHeld += 1; // not enough provider detail yet — leave for the next run / manual
+        continue;
+      }
+
+      const pending = await tx`
+        select id, amount from bet_acceptances where offer_id = ${offer.id} and status = 'pending'
+      `;
+
+      for (const acceptance of pending) {
+        const delta = Math.round(outcome.deltaFactor * Number(acceptance.amount) * 100) / 100;
+        await tx`
+          update bet_acceptances
+          set status = 'settled', result = ${outcome.result}, ledger_delta = ${delta}
+          where id = ${acceptance.id}
+        `;
+        acceptancesSettled += 1;
+      }
+
+      await tx`
+        update bet_offers set status = ${pending.length ? "settled" : "closed"} where id = ${offer.id}
+      `;
+      offersResolved += 1;
+    }
+  }
+});
+
 await sql.end();
 
 console.log(
   `Synced ${fixturesTouched} fixture row(s) and placed ${placements.size}/48 team(s) from football-data.org (${competition}).`
+);
+console.log(
+  `Settled ${acceptancesSettled} bet slip(s) across ${offersResolved} offer(s); ${offersHeld} offer(s) held for more data.`
 );
 if (finishedMatchCount > finishedWithScoreCount) {
   console.log(
@@ -421,6 +557,38 @@ if (finishedMatchCount > finishedWithScoreCount) {
 // ---------------------------------------------------------------------------
 // Helpers.
 // ---------------------------------------------------------------------------
+
+async function ensureBettingTablesExist(tx) {
+  await tx`
+    create table if not exists bet_offers (
+      id serial primary key,
+      fixture_id integer not null references fixtures(id) on delete cascade,
+      creator_participant_id integer not null references participants(id) on delete cascade,
+      market text not null,
+      creator_side text not null,
+      opponent_side text not null,
+      settlement_basis text not null,
+      handicap_team text,
+      handicap_line numeric(5,2),
+      max_amount numeric(10,2) not null,
+      status text not null default 'open',
+      note text,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await tx`
+    create table if not exists bet_acceptances (
+      id serial primary key,
+      offer_id integer not null references bet_offers(id) on delete cascade,
+      participant_id integer not null references participants(id) on delete cascade,
+      amount numeric(10,2) not null,
+      status text not null default 'pending',
+      result text not null default 'pending',
+      ledger_delta numeric(10,2) not null default 0,
+      accepted_at timestamptz not null default now()
+    )
+  `;
+}
 
 async function fetchJson(url) {
   const response = await fetch(url, { headers: { "X-Auth-Token": token } });

@@ -42,6 +42,7 @@ type SweepstakeClientProps = {
 
 const PRIZE_POOL = 600;
 const BET_OFFER_CREATE_MINIMUM = 50;
+const BET_CANCEL_LOCK_HOURS = 5;
 const PAYOUTS = {
   champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
   runnerUp: { label: "2nd Place", percent: 30, amount: PRIZE_POOL * 0.3 },
@@ -1208,7 +1209,28 @@ function BetOfferCard({
 }) {
   const [stake, setStake] = useState<number>(0);
   const [accepting, setAccepting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const acceptable = canBet && !isOwn && offer.status === "open" && offer.remainingAmount > 0;
+  const beforeCancelLock = fixture
+    ? new Date(fixture.kickoff).getTime() - BET_CANCEL_LOCK_HOURS * 60 * 60 * 1000 > Date.now()
+    : false;
+  const cancellable =
+    canBet && isOwn && (offer.status === "open" || offer.status === "filled") && beforeCancelLock;
+
+  async function cancel() {
+    setCancelling(true);
+    notify("Cancelling your offer...");
+    const { ok, error } = await postBet("/api/bet/cancel", { token, offerId: offer.id });
+    setCancelling(false);
+
+    if (!ok) {
+      notify(error ?? "Could not cancel offer.");
+      return;
+    }
+
+    notify("Offer cancelled. Any matched stakes were voided and refunded.");
+    await refresh();
+  }
 
   async function accept() {
     const amount = stake > 0 ? stake : offer.remainingAmount;
@@ -1306,12 +1328,18 @@ function BetOfferCard({
             {accepting ? "Accepting..." : "Accept"}
           </button>
         </div>
+      ) : cancellable ? (
+        <button className="bet-action danger" type="button" onClick={cancel} disabled={cancelling}>
+          {cancelling ? "Cancelling..." : `Cancel (until ${BET_CANCEL_LOCK_HOURS}h before kickoff)`}
+        </button>
       ) : (
         <button className="bet-action" type="button" disabled>
           {demoMode
             ? "Demo preview"
             : isOwn
-              ? "Your offer"
+              ? offer.status === "open" || offer.status === "filled"
+                ? "Cancel window closed"
+                : "Your offer"
               : !canBet
                 ? "Invite link required"
                 : offer.remainingAmount <= 0

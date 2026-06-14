@@ -66,9 +66,18 @@ Peer-to-peer betting ledger surfaced on the `bet-pool` tab. Offers are persisted
 `bet_offers` (one creator side vs. opponent side, `winner` or `asian_handicap` market,
 `advance_winner` or `ninety_minutes` settlement basis) with child `bet_acceptances`.
 The leaderboard ranks by **settled net profit only**; open exposure is shown but does
-not affect ordering. The UI's accept/create actions are intentionally disabled
-("Accept coming soon") — the shipped scope is the read-only ledger view + persistence.
-Settlement is not yet automated.
+not affect ordering. Bets are even money (1:1) on the line.
+
+- **Create / accept / cancel** are token-gated routes under `src/app/api/bet/*`.
+  Creation has an RM50 floor; acceptance is row-locked against over-matching and blocks
+  self-accept; cancellation is creator-only and allowed until `BET_CANCEL_LOCK_HOURS`
+  (5h) before kickoff, voiding/refunding any matched-but-unsettled stakes.
+- **Settlement is automatic** inside `npm run sync:results`: after scores land it
+  settles `pending` slips on finished fixtures using `scripts/settlement.mjs` (pure,
+  covered by `node scripts/sync-results.mjs --selftest`). AH uses quarter-line logic;
+  `ninety_minutes` uses the regular-time score, `advance_winner` the overall result
+  (incl. ET/pens). If the provider lacks the needed score detail, the slip is held
+  (left pending) for the next run rather than guessed.
 
 ## Conventions & Pitfalls
 

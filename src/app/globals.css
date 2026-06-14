@@ -838,6 +838,12 @@ button {
   border-color: var(--gold);
 }
 
+.bet-action.danger {
+  color: var(--red);
+  background: color-mix(in srgb, var(--panel) 80%, var(--red) 20%);
+  border-color: color-mix(in srgb, var(--line-strong) 60%, var(--red) 40%);
+}
+
 .bet-create {
   display: grid;
   gap: 12px;
