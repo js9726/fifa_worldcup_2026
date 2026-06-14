@@ -269,6 +269,9 @@ button {
 
   [data-theme="night"] .topbar-logo--icon {
     display: block;
+    /* match the Daylight full-lockup's height (lockup is 3:2) so both themes
+       render the logo at the same scale */
+    width: clamp(127px, 12.7vw, 167px);
   }
 }
 
