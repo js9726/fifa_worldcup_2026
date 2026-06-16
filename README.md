@@ -38,7 +38,7 @@ If the Wooden Spoon result is tied, the app shows the tied teams and splits that
 The app supports trusted Asian Handicap odds from OddsPapi's free tier.
 OddsPapi provides a structured World Cup 2026 soccer odds feed with Asian
 Handicap markets, including sharp-book coverage such as Pinnacle when available.
-The sync is quota-safe by default: it throttles provider calls to once per day
+The sync is quota-safe by default: it throttles provider calls to every 6 hours
 unless run with `--force`.
 
 `npm run sync:odds` is run by the same GitHub schedule as result syncing. If
@@ -120,8 +120,10 @@ Optional GitHub Actions variables:
 
 - `ODDSPAPI_BOOKMAKERS` - comma-separated bookmakers requested from OddsPapi.
 - `ODDSPAPI_BOOKMAKER` - preferred bookmaker name when more than one is available.
-- `ODDSPAPI_ODDS_MIN_INTERVAL_MINUTES` - defaults to `1440` to protect the free quota.
-- `ODDSPAPI_ODDS_MAX_FIXTURES` - defaults to `8` odds fixture calls per sync.
+- `ODDSPAPI_ODDS_MIN_INTERVAL_MINUTES` - defaults to `360` to protect the free quota while refreshing before later kickoffs.
+- `ODDSPAPI_ODDS_MAX_FIXTURES` - defaults to `12` odds fixture calls per sync.
+- `ODDSPAPI_ODDS_REFRESH_HOURS` - defaults to `12`; already trusted odds are refreshed near kickoff only after this age.
+- `ODDSPAPI_REQUEST_DELAY_MS`, `ODDSPAPI_RETRY_DELAY_MS`, `ODDSPAPI_MAX_RETRIES` - request pacing and retry controls for OddsPapi rate limits.
 
 Without `FOOTBALL_DATA_TOKEN` the workflow exits cleanly without touching Neon. The
 `/admin` results form remains available as a manual override.

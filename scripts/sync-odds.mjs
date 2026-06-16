@@ -13,9 +13,13 @@ const DEFAULT_SPORT_ID = "10"; // Soccer.
 const DEFAULT_TOURNAMENT_SLUG = "world-cup";
 const DEFAULT_CATEGORY_SLUG = "international";
 const DEFAULT_BOOKMAKERS = "pinnacle,bet365,draftkings,fanduel";
-const DEFAULT_MIN_INTERVAL_MINUTES = 1440; // OddsPapi free tier is monthly quota limited.
+const DEFAULT_MIN_INTERVAL_MINUTES = 360; // Keep free-tier usage modest while refreshing before later kickoffs.
 const DEFAULT_LOOKAHEAD_DAYS = 4;
-const DEFAULT_MAX_ODDS_FIXTURES = 8;
+const DEFAULT_MAX_ODDS_FIXTURES = 12;
+const DEFAULT_REFRESH_HOURS = 12;
+const DEFAULT_REQUEST_DELAY_MS = 1500;
+const DEFAULT_RETRY_DELAY_MS = 5000;
+const DEFAULT_MAX_RETRIES = 3;
 const SYNC_META_KEY = "oddspapi_odds_last_attempt";
 
 await loadDotEnvLocal();
@@ -31,7 +35,12 @@ const preferredBookmaker = process.env.ODDSPAPI_BOOKMAKER || "pinnacle";
 const minIntervalMinutes = positiveNumber(process.env.ODDSPAPI_ODDS_MIN_INTERVAL_MINUTES, DEFAULT_MIN_INTERVAL_MINUTES);
 const lookaheadDays = positiveNumber(process.env.ODDSPAPI_ODDS_LOOKAHEAD_DAYS, DEFAULT_LOOKAHEAD_DAYS);
 const maxOddsFixtures = positiveNumber(process.env.ODDSPAPI_ODDS_MAX_FIXTURES, DEFAULT_MAX_ODDS_FIXTURES);
+const refreshHours = positiveNumber(process.env.ODDSPAPI_ODDS_REFRESH_HOURS, DEFAULT_REFRESH_HOURS);
 const matchToleranceMinutes = positiveNumber(process.env.ODDSPAPI_MATCH_TIME_TOLERANCE_MINUTES, 90);
+const requestDelayMs = positiveNumber(process.env.ODDSPAPI_REQUEST_DELAY_MS, DEFAULT_REQUEST_DELAY_MS);
+const retryDelayMs = positiveNumber(process.env.ODDSPAPI_RETRY_DELAY_MS, DEFAULT_RETRY_DELAY_MS);
+const maxRetries = positiveNumber(process.env.ODDSPAPI_MAX_RETRIES, DEFAULT_MAX_RETRIES);
+let lastOddsPapiRequestAt = 0;
 
 if (process.argv.includes("--selftest")) {
   runSelfTest();
@@ -60,7 +69,13 @@ try {
   }
 
   const fixtures = await sql`
-    select id, kickoff::text as kickoff, home_country, away_country
+    select
+      id,
+      kickoff::text as kickoff,
+      home_country,
+      away_country,
+      odds_provider,
+      odds_last_updated::text as odds_last_updated
     from fixtures
     where kickoff > now()
       and home_score is null
@@ -74,6 +89,13 @@ try {
     process.exit(0);
   }
 
+  const refreshCandidates = fixtures.filter(shouldRefreshFixtureOdds);
+  if (!refreshCandidates.length) {
+    await sql.end();
+    console.log(`Trusted AH odds sync skipped: ${fixtures.length} upcoming fixture(s) already have fresh trusted odds.`);
+    process.exit(0);
+  }
+
   await markSyncAttempt(sql);
 
   const marketCatalog = await fetchAsianHandicapMarketCatalog();
@@ -83,11 +105,11 @@ try {
     process.exit(0);
   }
 
-  const providerFixtures = await fetchWorldCupFixtures(fixtures);
-  const matchedProviderFixtures = fixtures
+  const providerFixtures = await fetchWorldCupFixtures(refreshCandidates);
+  const matchedProviderFixtures = refreshCandidates
     .map((fixture) => ({
       fixture,
-      providerFixture: findMatchingProviderFixture(providerFixtures, fixture, fixtures)
+      providerFixture: findMatchingProviderFixture(providerFixtures, fixture, refreshCandidates)
     }))
     .filter((item) => item.providerFixture?.hasOdds)
     .slice(0, maxOddsFixtures);
@@ -118,7 +140,7 @@ try {
 
   await sql.end();
   console.log(
-    `Trusted AH odds sync complete: ${updated}/${fixtures.length} fixture(s) updated from ${PROVIDER}; ${matched} fixture(s) matched provider fixtures with odds.`
+    `Trusted AH odds sync complete: ${updated}/${fixtures.length} upcoming fixture(s) updated from ${PROVIDER}; ${refreshCandidates.length} fixture(s) needed refresh; ${matched} provider fixture(s) had odds.`
   );
 } catch (error) {
   console.warn(`Trusted AH odds sync skipped after provider/config error: ${error.message}`);
@@ -188,6 +210,19 @@ async function fetchWorldCupFixtures(fixtures) {
   );
 }
 
+function shouldRefreshFixtureOdds(fixture) {
+  if (fixture.odds_provider !== PROVIDER || !fixture.odds_last_updated) return true;
+
+  const kickoff = new Date(fixture.kickoff);
+  const updatedAt = new Date(fixture.odds_last_updated);
+  if (Number.isNaN(kickoff.getTime()) || Number.isNaN(updatedAt.getTime())) return true;
+
+  const hoursUntilKickoff = (kickoff.getTime() - Date.now()) / (60 * 60 * 1000);
+  const hoursSinceUpdate = (Date.now() - updatedAt.getTime()) / (60 * 60 * 1000);
+
+  return hoursUntilKickoff <= 24 && hoursSinceUpdate >= refreshHours;
+}
+
 async function fetchAsianHandicapMarketCatalog() {
   const payload = await fetchOddsPapi("/v4/markets", { sportId });
   if (!Array.isArray(payload)) throw new Error("Unexpected OddsPapi markets response.");
@@ -222,15 +257,40 @@ async function fetchOddsPapi(pathname, params) {
     if (value !== null && value !== undefined && value !== "") url.searchParams.set(key, value);
   }
 
-  const response = await fetch(url);
-  const payload = await response.json().catch(() => null);
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    await paceOddsPapiRequest();
 
-  if (!response.ok) {
+    const response = await fetch(url);
+    const payload = await response.json().catch(() => null);
+
+    if (response.ok) return payload;
+
     const message = payload?.error?.message || payload?.message || `${response.status} ${response.statusText}`;
+    if (isRetryableOddsPapiError(response.status, message) && attempt < maxRetries) {
+      await sleep(retryDelayMs * (attempt + 1));
+      continue;
+    }
+
     throw new Error(`${message} from ${url.origin}${url.pathname}`);
   }
 
-  return payload;
+  throw new Error(`OddsPapi request failed after ${maxRetries + 1} attempt(s) from ${url.origin}${url.pathname}`);
+}
+
+async function paceOddsPapiRequest() {
+  const elapsed = Date.now() - lastOddsPapiRequestAt;
+  if (lastOddsPapiRequestAt && elapsed < requestDelayMs) {
+    await sleep(requestDelayMs - elapsed);
+  }
+  lastOddsPapiRequestAt = Date.now();
+}
+
+function isRetryableOddsPapiError(status, message) {
+  return status === 429 || /rate limit|too many requests|temporarily unavailable/i.test(message);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fixtureDateRange(fixtures, days) {
@@ -373,8 +433,10 @@ function normalizeTeam(value) {
   const cleaned = normalized.replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
   const aliases = {
     "cabo verde": "cape verde",
+    "congo dr": "dr congo",
     "cote d ivoire": "cote divoire",
     "czech republic": "czechia",
+    "democratic republic of congo": "dr congo",
     "ivory coast": "cote divoire",
     "south korea": "korea republic",
     turkey: "turkiye",
@@ -458,6 +520,23 @@ function runSelfTest() {
         participant2Name: "Switzerland"
       },
       fixture,
+      [fixture]
+    ),
+    true
+  );
+  assert.equal(
+    providerFixtureMatches(
+      {
+        startTime: "2026-06-17T17:00:00.000Z",
+        participant1Name: "Portugal",
+        participant2Name: "Congo DR"
+      },
+      {
+        id: 2,
+        kickoff: "2026-06-17T17:00:00Z",
+        home_country: "Portugal",
+        away_country: "DR Congo"
+      },
       [fixture]
     ),
     true
