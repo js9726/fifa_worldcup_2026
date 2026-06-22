@@ -50,7 +50,7 @@ type SweepstakeClientProps = {
 
 const PRIZE_POOL = 600;
 const BET_OFFER_DEFAULT_STAKE = 50;
-const BET_CANCEL_LOCK_HOURS = 5;
+const BET_CANCEL_LOCK_HOURS = 1;
 const PAYOUTS = {
   champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
   runnerUp: { label: "2nd Place", percent: 30, amount: PRIZE_POOL * 0.3 },
@@ -582,7 +582,7 @@ export default function SweepstakeClient({
           className="topbar-logo topbar-logo--full"
           src="/wc-logo-icon.png"
           alt="World Cup Sweepstake"
-          width={300}
+          width={260}
           height={260}
         />
         {(() => {
@@ -887,6 +887,10 @@ function BetPoolPanel({
       .filter((acceptance) => acceptance.status !== "pending")
       .map((acceptance) => ({ offer, fixture, acceptance }));
   });
+  const availableOffers = betting.openOffers.filter((offer) => {
+    const fixture = fixtureById.get(offer.fixtureId);
+    return fixture ? !fixtureHasStarted(fixture) : true;
+  });
   const [historyOpen, setHistoryOpen] = useState(false);
   const canBet = !demoMode && Boolean(participant) && Boolean(token);
 
@@ -924,11 +928,11 @@ function BetPoolPanel({
           <p className="eyebrow">Open offers</p>
           <h2>Available to accept</h2>
         </div>
-        <span>{betting.openOffers.length} live</span>
+        <span>{availableOffers.length} live</span>
       </div>
       <div className="bet-offer-grid">
-        {betting.openOffers.length ? (
-          betting.openOffers.map((offer) => (
+        {availableOffers.length ? (
+          availableOffers.map((offer) => (
             <BetOfferCard
               key={offer.id}
               offer={offer}
@@ -942,7 +946,7 @@ function BetPoolPanel({
             />
           ))
         ) : (
-          <p className="empty">No open betting offers yet.</p>
+          <p className="empty">No betting offers are available before kickoff right now.</p>
         )}
       </div>
 
@@ -1086,7 +1090,10 @@ function CreateOfferForm({
   const openFixtures = useMemo(
     () =>
       fixtures
-        .filter((fixture) => fixture.homeScore === null && fixture.awayScore === null)
+        .filter(
+          (fixture) =>
+            fixture.homeScore === null && fixture.awayScore === null && !fixtureHasStarted(fixture)
+        )
         .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
     [fixtures]
   );
@@ -1323,7 +1330,8 @@ function BetOfferCard({
     canBet &&
     isOwn &&
     (offer.status === "open" || offer.status === "filled") &&
-    // Unmatched offers can always be pulled; matched ones only before the cut-off.
+    !matchStarted &&
+    // Unmatched offers can be pulled before kickoff; matched ones only before the cut-off.
     (!hasActiveBets || beforeCancelLock);
 
   async function cancel() {

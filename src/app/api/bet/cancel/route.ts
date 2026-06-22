@@ -5,7 +5,7 @@ import { ensureBettingTables } from "@/lib/state";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CANCEL_LOCK_HOURS = 5;
+const CANCEL_LOCK_HOURS = 1;
 
 type CancelBody = {
   token?: string;
@@ -42,7 +42,12 @@ export async function POST(request: NextRequest) {
       }
 
       const offerRows = (await tx`
-        select o.id, o.creator_participant_id, o.status, f.kickoff::text as kickoff
+        select
+          o.id,
+          o.creator_participant_id,
+          o.status,
+          f.kickoff <= now() as match_started,
+          f.kickoff - (${CANCEL_LOCK_HOURS}::int * interval '1 hour') <= now() as cancel_locked
         from bet_offers o
         join fixtures f on f.id = o.fixture_id
         where o.id = ${body.offerId!}
@@ -51,7 +56,8 @@ export async function POST(request: NextRequest) {
         id: number;
         creator_participant_id: number;
         status: string;
-        kickoff: string;
+        match_started: boolean;
+        cancel_locked: boolean;
       }>;
       const [offer] = offerRows;
 
@@ -73,12 +79,16 @@ export async function POST(request: NextRequest) {
       `) as Array<{ active: number }>;
       const hasActiveBets = activeRows[0].active > 0;
 
-      // Unmatched offers can be pulled at any time. Once a bet is matched, the
-      // creator can only cancel up until the cut-off before kickoff.
-      const lockMs = CANCEL_LOCK_HOURS * 60 * 60 * 1000;
-      if (hasActiveBets && new Date(offer.kickoff).getTime() - lockMs <= Date.now()) {
+      // No bet pool changes are allowed once a match is live.
+      if (offer.match_started) {
+        throw new Response("Offers cannot be cancelled after kickoff", { status: 409 });
+      }
+
+      // Unmatched offers can be pulled before kickoff. Once a bet is matched,
+      // the creator can only cancel up until the cut-off before kickoff.
+      if (hasActiveBets && offer.cancel_locked) {
         throw new Response(
-          `Once a bet is matched, cancellation closes ${CANCEL_LOCK_HOURS} hours before kickoff`,
+          `Once a bet is matched, cancellation closes ${CANCEL_LOCK_HOURS} hour before kickoff`,
           { status: 409 }
         );
       }

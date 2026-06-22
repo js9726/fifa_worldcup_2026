@@ -83,15 +83,24 @@ export async function POST(request: NextRequest) {
       }
 
       const fixtureRows = (await tx`
-        select id, home_country, away_country, home_score
+        select id, home_country, away_country, home_score, kickoff <= now() as match_started
         from fixtures
         where id = ${body.fixtureId!}
         limit 1
-      `) as Array<{ id: number; home_country: string; away_country: string; home_score: number | null }>;
+      `) as Array<{
+        id: number;
+        home_country: string;
+        away_country: string;
+        home_score: number | null;
+        match_started: boolean;
+      }>;
       const [fixture] = fixtureRows;
 
       if (!fixture) {
         throw new Response("Fixture not found", { status: 404 });
+      }
+      if (fixture.match_started) {
+        throw new Response("Betting has closed - this match has already started", { status: 409 });
       }
       if (fixture.home_score !== null) {
         throw new Response("That fixture has already been played", { status: 409 });

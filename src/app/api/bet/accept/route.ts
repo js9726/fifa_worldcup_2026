@@ -47,7 +47,12 @@ export async function POST(request: NextRequest) {
       }
 
       const offerRows = (await tx`
-        select o.id, o.creator_participant_id, o.max_amount, o.status, f.kickoff::text as kickoff
+        select
+          o.id,
+          o.creator_participant_id,
+          o.max_amount,
+          o.status,
+          f.kickoff <= now() as match_started
         from bet_offers o
         join fixtures f on f.id = o.fixture_id
         where o.id = ${body.offerId!}
@@ -57,7 +62,7 @@ export async function POST(request: NextRequest) {
         creator_participant_id: number;
         max_amount: string | number;
         status: string;
-        kickoff: string;
+        match_started: boolean;
       }>;
       const [offer] = offerRows;
 
@@ -70,8 +75,8 @@ export async function POST(request: NextRequest) {
       if (offer.status !== "open") {
         throw new Response("Offer is no longer open", { status: 409 });
       }
-      if (new Date(offer.kickoff).getTime() <= Date.now()) {
-        throw new Response("Betting has closed — this match has already started", { status: 409 });
+      if (offer.match_started) {
+        throw new Response("Betting has closed - this match has already started", { status: 409 });
       }
 
       const matchedRows = (await tx`
