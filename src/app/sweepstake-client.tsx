@@ -887,9 +887,10 @@ function BetPoolPanel({
       .filter((acceptance) => acceptance.status !== "pending")
       .map((acceptance) => ({ offer, fixture, acceptance }));
   });
-  const availableOffers = betting.openOffers.filter((offer) => {
+  const activeOffers = betting.openOffers.filter((offer) => {
     const fixture = fixtureById.get(offer.fixtureId);
-    return fixture ? !fixtureHasStarted(fixture) : true;
+    const hasPendingStake = offer.acceptances.some((acceptance) => acceptance.status === "pending");
+    return fixture ? !fixtureHasStarted(fixture) || hasPendingStake : true;
   });
   const [historyOpen, setHistoryOpen] = useState(false);
   const canBet = !demoMode && Boolean(participant) && Boolean(token);
@@ -925,14 +926,14 @@ function BetPoolPanel({
 
       <div className="bet-section-heading">
         <div>
-          <p className="eyebrow">Open offers</p>
-          <h2>Available to accept</h2>
+          <p className="eyebrow">Betting board</p>
+          <h2>Active offers</h2>
         </div>
-        <span>{availableOffers.length} live</span>
+        <span>{activeOffers.length} active</span>
       </div>
       <div className="bet-offer-grid">
-        {availableOffers.length ? (
-          availableOffers.map((offer) => (
+        {activeOffers.length ? (
+          activeOffers.map((offer) => (
             <BetOfferCard
               key={offer.id}
               offer={offer}
@@ -946,7 +947,7 @@ function BetPoolPanel({
             />
           ))
         ) : (
-          <p className="empty">No betting offers are available before kickoff right now.</p>
+          <p className="empty">No active betting offers right now.</p>
         )}
       </div>
 
