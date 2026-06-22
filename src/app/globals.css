@@ -794,7 +794,6 @@ button {
 .bet-summary-card span,
 .bet-summary-card em,
 .bet-progress span,
-.bet-mini-slip span,
 .bet-slip-summary span {
   color: var(--muted);
   font-size: 0.78rem;
@@ -866,8 +865,7 @@ button {
 }
 
 .bet-offer-card,
-.bet-slip-summary,
-.bet-mini-slip {
+.bet-slip-summary {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-2);
@@ -1137,6 +1135,7 @@ button {
 
 .bet-slip-summary {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 12px;
@@ -1144,23 +1143,6 @@ button {
 
 .bet-slip-summary strong {
   font-size: 1.15rem;
-}
-
-.bet-slip-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
-  gap: 8px;
-}
-
-.bet-mini-slip {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-}
-
-.bet-mini-slip p {
-  margin: 0;
-  color: var(--muted);
 }
 
 .watch-panel {

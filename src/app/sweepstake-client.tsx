@@ -960,22 +960,6 @@ function BetPoolPanel({
       </div>
       <div className="bet-slip-grid">
         {myRow ? <BetSlipSummary row={myRow} /> : <p className="empty">Open a personal invite link to see your slip.</p>}
-        <div className="bet-slip-list">
-          {betting.myOffers.map((offer) => (
-            <BetMiniSlip key={`offer-${offer.id}`} label="Created" title={offer.creatorSide} detail={marketLabel(offer)} />
-          ))}
-          {betting.myAcceptances.map((acceptance) => (
-            <BetMiniSlip
-              key={`acceptance-${acceptance.id}`}
-              label={resultLabel(acceptance)}
-              title={formatSignedBetAmount(acceptance.ledgerDelta)}
-              detail={`${formatBetAmount(acceptance.amount)} stake`}
-            />
-          ))}
-          {!betting.myOffers.length && !betting.myAcceptances.length && (
-            <p className="empty">No betting slip activity yet.</p>
-          )}
-        </div>
       </div>
 
       <div className="bet-section-heading">
@@ -1494,16 +1478,6 @@ function BetSlipSummary({ row }: { row: BetLeaderboardRow }) {
         </strong>
       </div>
     </div>
-  );
-}
-
-function BetMiniSlip({ label, title, detail }: { label: string; title: string; detail: string }) {
-  return (
-    <article className="bet-mini-slip">
-      <span>{label}</span>
-      <strong>{title}</strong>
-      <p>{detail}</p>
-    </article>
   );
 }
 
