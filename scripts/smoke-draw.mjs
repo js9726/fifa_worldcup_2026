@@ -1,7 +1,7 @@
 // Concurrency smoke test for the live draw.
 //
 // Mirrors the exact transaction in src/app/api/draw/route.ts (random pick +
-// `for update of t skip locked` + unique(team_id)) and hammers it with more
+// `for update of t skip locked` + unique(pool_id, team_id)) and hammers it with more
 // concurrent participants than there are countries, to prove:
 //   * each draw returns a distinct country (no double-draw under load),
 //   * drawn countries are removed from the pool immediately,
@@ -21,6 +21,7 @@ const NUM_TEAMS = 8;
 const NUM_PARTICIPANTS = 12; // more people than countries -> forced contention
 const TEAM_PREFIX = "__SMOKE_TEAM__";
 const PART_PREFIX = "__SMOKE_P__";
+const GROUP_SLUG = "__smoke_group__";
 
 let url = "";
 const env = fs.readFileSync(".env.local", "utf8");
@@ -46,10 +47,12 @@ function check(label, ok) {
 }
 
 async function cleanup() {
+  await sql`delete from draws where pool_id in (select id from sweepstake_groups where slug = ${GROUP_SLUG})`;
   await sql`delete from draws where pot_id = ${POT_ID}`;
   await sql`delete from draws where participant_id in (select id from participants where name like ${PART_PREFIX + "%"})`;
   await sql`delete from teams where pot_id = ${POT_ID}`;
   await sql`delete from participants where name like ${PART_PREFIX + "%"}`;
+  await sql`delete from sweepstake_groups where slug = ${GROUP_SLUG}`;
   await sql`delete from pots where id = ${POT_ID}`;
 }
 
@@ -57,7 +60,7 @@ async function cleanup() {
 async function drawOnce(token, potId) {
   return sql.begin(async (tx) => {
     const [participant] = await tx`
-      select id, name from participants where invite_token = ${token} limit 1
+      select id, name, pool_id from participants where invite_token = ${token} limit 1
     `;
     if (!participant) throw new Error("Invite link not recognised");
 
@@ -65,7 +68,9 @@ async function drawOnce(token, potId) {
       select t.id, t.country
       from draws d
       join teams t on t.id = d.team_id
-      where d.participant_id = ${participant.id} and d.pot_id = ${potId}
+      where d.participant_id = ${participant.id}
+        and d.pool_id = ${participant.pool_id}
+        and d.pot_id = ${potId}
       limit 1
     `;
     if (existing) return { ok: true, reused: true, teamId: existing.id, country: existing.country };
@@ -74,7 +79,11 @@ async function drawOnce(token, potId) {
       select t.id, t.country
       from teams t
       where t.pot_id = ${potId}
-        and not exists (select 1 from draws d where d.team_id = t.id)
+        and not exists (
+          select 1 from draws d
+          where d.team_id = t.id
+            and d.pool_id = ${participant.pool_id}
+        )
       order by random()
       limit 1
       for update of t skip locked
@@ -82,22 +91,22 @@ async function drawOnce(token, potId) {
     if (!team) return { ok: false, reason: "empty" };
 
     await tx`
-      insert into draws (participant_id, team_id, pot_id)
-      values (${participant.id}, ${team.id}, ${potId})
+      insert into draws (pool_id, participant_id, team_id, pot_id)
+      values (${participant.pool_id}, ${participant.id}, ${team.id}, ${potId})
     `;
     return { ok: true, reused: false, teamId: team.id, country: team.country };
   });
 }
 
 // Mirrors the pot-availability query in getAppState (what "pull live" computes).
-async function availability(potId) {
+async function availability(potId, poolId) {
   const [row] = await sql`
     select
       count(t.id)::int as total,
       count(t.id) filter (where d.id is null)::int as available
     from pots p
     left join teams t on t.pot_id = p.id
-    left join draws d on d.team_id = t.id
+    left join draws d on d.team_id = t.id and d.pool_id = ${poolId}
     where p.id = ${potId}
     group by p.id
   `;
@@ -108,6 +117,22 @@ try {
   await cleanup(); // clear any residue from a previous run
 
   // --- setup isolated fixtures ---------------------------------------------
+  await sql`
+    create table if not exists sweepstake_groups (
+      id serial primary key,
+      slug text not null unique,
+      name text not null,
+      allow_draws boolean not null default true,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await sql`
+    insert into sweepstake_groups (slug, name, allow_draws)
+    values (${GROUP_SLUG}, 'Smoke Test Group', true)
+    on conflict (slug) do update set allow_draws = true
+    returning id
+  `;
+  const [{ id: groupId }] = await sql`select id from sweepstake_groups where slug = ${GROUP_SLUG} limit 1`;
   await sql`insert into pots (id, name, label, colour) values (${POT_ID}, 'Smoke Pot', 'SMOKE', 'gold')`;
   for (let i = 1; i <= NUM_TEAMS; i += 1) {
     await sql`
@@ -119,7 +144,7 @@ try {
   for (let i = 1; i <= NUM_PARTICIPANTS; i += 1) {
     const tok = crypto.randomBytes(12).toString("hex");
     tokens.push(tok);
-    await sql`insert into participants (name, invite_token) values (${PART_PREFIX + i}, ${tok})`;
+    await sql`insert into participants (pool_id, name, invite_token) values (${groupId}, ${PART_PREFIX + i}, ${tok})`;
   }
   console.log(`Setup: pot ${POT_ID} with ${NUM_TEAMS} teams, ${NUM_PARTICIPANTS} participants.\n`);
 
@@ -148,7 +173,7 @@ try {
   check("no participant holds more than one country in the pot", dupes.length === 0);
 
   // --- 2. pool emptied (removed on pull) -----------------------------------
-  const after = await availability(POT_ID);
+  const after = await availability(POT_ID, groupId);
   console.log("\n2) Pool removal:");
   check(`pool availability is 0/${NUM_TEAMS} after the draws`, after.available === 0 && after.total === NUM_TEAMS);
 
@@ -167,7 +192,7 @@ try {
   const reads = await Promise.all(
     Array.from({ length: READS }, () => {
       const s = performance.now();
-      return availability(POT_ID).then((r) => ({ available: r.available, ms: performance.now() - s }));
+      return availability(POT_ID, groupId).then((r) => ({ available: r.available, ms: performance.now() - s }));
     })
   );
   const wallMs = performance.now() - t1;

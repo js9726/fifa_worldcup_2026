@@ -57,6 +57,21 @@ export type Fixture = {
 export type Participant = {
   id: number;
   name: string;
+  groupId: number;
+};
+
+export type SweepstakeGroup = {
+  id: number;
+  slug: string;
+  name: string;
+  allowDraws: boolean;
+  createdAt: string;
+};
+
+export type SweepstakeGroupSummary = SweepstakeGroup & {
+  participantCount: number;
+  drawCount: number;
+  offerCount: number;
 };
 
 export type BetMarket = "winner" | "asian_handicap";
@@ -83,6 +98,7 @@ export type BetAcceptance = {
 
 export type BetOffer = {
   id: number;
+  groupId: number;
   fixtureId: number;
   creatorParticipantId: number;
   creatorName: string;
@@ -124,6 +140,7 @@ export type BettingState = {
 };
 
 export type AppState = {
+  group: SweepstakeGroup | null;
   participant: Participant | null;
   participants: Participant[];
   pots: Pot[];

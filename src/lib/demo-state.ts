@@ -58,7 +58,8 @@ function mapTeam(team: SeedTeam): Team {
 
 const participants: Participant[] = seed.participants.map((name, index) => ({
   id: index + 1,
-  name
+  name,
+  groupId: 1
 }));
 
 const teams = seed.teams.map(mapTeam);
@@ -146,6 +147,7 @@ function fixture(home: string, away: string) {
 const demoBetOffers: BetOffer[] = [
   {
     id: 1,
+    groupId: 1,
     fixtureId: argentinaFinalFixtureId,
     creatorParticipantId: participant("SK").id,
     creatorName: "SK",
@@ -177,6 +179,7 @@ const demoBetOffers: BetOffer[] = [
   },
   {
     id: 2,
+    groupId: 1,
     fixtureId: fixture("Brazil", "Haiti").id,
     creatorParticipantId: participant("HY").id,
     creatorName: "HY",
@@ -208,6 +211,7 @@ const demoBetOffers: BetOffer[] = [
   },
   {
     id: 3,
+    groupId: 1,
     fixtureId: fixture("Sweden", "Tunisia").id,
     creatorParticipantId: participant("CY").id,
     creatorName: "CY",
@@ -239,6 +243,7 @@ const demoBetOffers: BetOffer[] = [
   },
   {
     id: 4,
+    groupId: 1,
     fixtureId: fixture("Spain", "Cape Verde").id,
     creatorParticipantId: participant("YK").id,
     creatorName: "YK",
@@ -270,6 +275,7 @@ const demoBetOffers: BetOffer[] = [
   },
   {
     id: 5,
+    groupId: 1,
     fixtureId: fixture("United States", "Paraguay").id,
     creatorParticipantId: participant("CC").id,
     creatorName: "CC",
@@ -302,6 +308,13 @@ const demoBetOffers: BetOffer[] = [
 ];
 
 export const demoState: AppState = {
+  group: {
+    id: 1,
+    slug: "demo",
+    name: "Demo Pool",
+    allowDraws: false,
+    createdAt: "2026-06-11T00:00:00.000Z"
+  },
   participant: participants[0],
   participants,
   pots: seed.pots.map(

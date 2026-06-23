@@ -475,6 +475,7 @@ let offersAutoClosed = 0;
 
 await sql.begin(async (tx) => {
   await ensureBettingTablesExist(tx);
+  await ensureGroupSchemaExist(tx);
 
   // Close offers nobody accepted once their match has kicked off — betting on a
   // live/finished match is no longer valid. Offers with matched stakes are left
@@ -606,6 +607,63 @@ async function ensureBettingTablesExist(tx) {
       accepted_at timestamptz not null default now()
     )
   `;
+}
+
+async function ensureGroupSchemaExist(tx) {
+  const defaultGroupSlug = "existing-neon-pool";
+  const defaultGroupName = "Existing Neon Pool";
+
+  await tx`
+    create table if not exists sweepstake_groups (
+      id serial primary key,
+      slug text not null unique,
+      name text not null,
+      allow_draws boolean not null default true,
+      created_at timestamptz not null default now()
+    )
+  `;
+  await tx`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
+  await tx`
+    insert into sweepstake_groups (slug, name, allow_draws)
+    values (${defaultGroupSlug}, ${defaultGroupName}, true)
+    on conflict (slug) do nothing
+  `;
+
+  await tx`alter table participants add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update participants
+    set pool_id = (select id from sweepstake_groups where slug = ${defaultGroupSlug})
+    where pool_id is null
+  `;
+  await tx`alter table participants alter column pool_id set not null`;
+
+  await tx`alter table draws add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update draws d
+    set pool_id = p.pool_id
+    from participants p
+    where d.participant_id = p.id
+      and d.pool_id is null
+  `;
+  await tx`alter table draws alter column pool_id set not null`;
+
+  await tx`alter table bet_offers add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update bet_offers o
+    set pool_id = p.pool_id
+    from participants p
+    where o.creator_participant_id = p.id
+      and o.pool_id is null
+  `;
+  await tx`alter table bet_offers alter column pool_id set not null`;
+
+  await tx`alter table participants drop constraint if exists participants_name_key`;
+  await tx`alter table draws drop constraint if exists draws_participant_id_pot_id_key`;
+  await tx`alter table draws drop constraint if exists draws_team_id_key`;
+  await tx`create unique index if not exists participants_pool_name_unique on participants(pool_id, name)`;
+  await tx`create unique index if not exists draws_pool_team_unique on draws(pool_id, team_id)`;
+  await tx`create index if not exists draws_pool_participant_idx on draws(pool_id, participant_id)`;
+  await tx`create index if not exists bet_offers_pool_id_idx on bet_offers(pool_id)`;
 }
 
 async function fetchJson(url) {

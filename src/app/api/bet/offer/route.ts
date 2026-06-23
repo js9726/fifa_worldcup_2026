@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { ensureBettingTables } from "@/lib/state";
+import { ensureGroupSchema } from "@/lib/groups";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,14 +69,15 @@ export async function POST(request: NextRequest) {
 
   try {
     await ensureBettingTables(sql);
+    await ensureGroupSchema(sql);
 
     const offer = await sql.begin(async (tx) => {
       const participantRows = (await tx`
-        select id, name
+        select id, name, pool_id
         from participants
         where invite_token = ${token}
         limit 1
-      `) as Array<{ id: number; name: string }>;
+      `) as Array<{ id: number; name: string; pool_id: number }>;
       const [participant] = participantRows;
 
       if (!participant) {
@@ -128,11 +130,11 @@ export async function POST(request: NextRequest) {
 
       const insertedRows = (await tx`
         insert into bet_offers (
-          fixture_id, creator_participant_id, market, creator_side, opponent_side,
+          pool_id, fixture_id, creator_participant_id, market, creator_side, opponent_side,
           settlement_basis, handicap_team, handicap_line, max_amount, status, note
         )
         values (
-          ${fixture.id}, ${participant.id}, ${market}, ${creatorSide}, ${opponentSide},
+          ${participant.pool_id}, ${fixture.id}, ${participant.id}, ${market}, ${creatorSide}, ${opponentSide},
           ${body.settlementBasis!}, ${handicapTeam}, ${handicapLine}, ${maxAmount}, 'open', ${note}
         )
         returning id

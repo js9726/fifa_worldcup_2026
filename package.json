@@ -9,6 +9,8 @@
     "lint": "next lint",
     "setup:db": "node scripts/setup-db.mjs",
     "export:invites": "node scripts/export-invite-links.mjs",
+    "backup:pools": "node scripts/backup-neon-pool-data.mjs",
+    "import:walplus": "node scripts/import-walplus-group.mjs",
     "sync:results": "node scripts/sync-results.mjs",
     "sync:odds": "node scripts/sync-odds.mjs"
   },

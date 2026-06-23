@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { ensureBettingTables } from "@/lib/state";
+import { ensureGroupSchema } from "@/lib/groups";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,14 +28,15 @@ export async function POST(request: NextRequest) {
 
   try {
     await ensureBettingTables(sql);
+    await ensureGroupSchema(sql);
 
     await sql.begin(async (tx) => {
       const participantRows = (await tx`
-        select id, name
+        select id, name, pool_id
         from participants
         where invite_token = ${token}
         limit 1
-      `) as Array<{ id: number; name: string }>;
+      `) as Array<{ id: number; name: string; pool_id: number }>;
       const [participant] = participantRows;
 
       if (!participant) {
@@ -44,6 +46,7 @@ export async function POST(request: NextRequest) {
       const offerRows = (await tx`
         select
           o.id,
+          o.pool_id,
           o.creator_participant_id,
           o.status,
           f.kickoff <= now() as match_started,
@@ -54,6 +57,7 @@ export async function POST(request: NextRequest) {
         for update of o
       `) as Array<{
         id: number;
+        pool_id: number;
         creator_participant_id: number;
         status: string;
         match_started: boolean;
@@ -62,6 +66,9 @@ export async function POST(request: NextRequest) {
       const [offer] = offerRows;
 
       if (!offer) {
+        throw new Response("Offer not found", { status: 404 });
+      }
+      if (offer.pool_id !== participant.pool_id) {
         throw new Response("Offer not found", { status: 404 });
       }
       if (offer.creator_participant_id !== participant.id) {

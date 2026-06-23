@@ -45,6 +45,8 @@ type SweepstakeClientProps = {
   initialState?: AppState;
   demoMode?: boolean;
   adminOverview?: boolean;
+  adminKey?: string;
+  adminStateUrl?: string;
   initialTab?: Tab;
 };
 
@@ -434,6 +436,8 @@ export default function SweepstakeClient({
   initialState = undefined,
   demoMode = false,
   adminOverview = false,
+  adminKey = "",
+  adminStateUrl = "",
   initialTab = "draw"
 }: SweepstakeClientProps) {
   const [state, setState] = useState<AppState | null>(initialState ?? null);
@@ -444,10 +448,14 @@ export default function SweepstakeClient({
 
   async function loadState() {
     if (demoMode) return;
+    if (adminOverview && (!adminStateUrl || !adminKey)) return;
     if (!adminOverview && !token) return;
 
-    const url = adminOverview ? "/api/state" : `/api/state?token=${encodeURIComponent(token)}`;
-    const response = await fetch(url, { cache: "no-store" });
+    const url = adminOverview ? adminStateUrl : `/api/state?token=${encodeURIComponent(token)}`;
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: adminOverview ? { "x-admin-key": adminKey } : undefined
+    });
     const payload = await response.json();
     if (!response.ok) {
       setMessage(payload.error ?? "Unable to load invite");
@@ -458,12 +466,17 @@ export default function SweepstakeClient({
 
   useEffect(() => {
     if (demoMode) return;
+    if (adminOverview && (!adminStateUrl || !adminKey)) return;
     if (!adminOverview && !token) return;
 
     loadState();
     const interval = window.setInterval(loadState, 12000);
     return () => window.clearInterval(interval);
-  }, [demoMode, token, adminOverview]);
+  }, [demoMode, token, adminOverview, adminKey, adminStateUrl]);
+
+  useEffect(() => {
+    if (initialState) setState(initialState);
+  }, [initialState]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("sweepstake-theme");
@@ -487,6 +500,10 @@ export default function SweepstakeClient({
   }, [theme]);
 
   async function drawPot(pot: Pot) {
+    if (state?.group?.allowDraws === false) {
+      setMessage("This group already has assigned teams. Draws are locked.");
+      return;
+    }
     if (demoMode) {
       setMessage("Demo mode is pre-filled. Use a private invite link for the real live draw.");
       return;
@@ -535,6 +552,11 @@ export default function SweepstakeClient({
     [state]
   );
   const tournamentStats = useMemo(() => (state ? getTournamentStats(state) : null), [state]);
+  const canShowDrawTab = !adminOverview && (demoMode || state?.group?.allowDraws !== false);
+
+  useEffect(() => {
+    if (state && tab === "draw" && !canShowDrawTab) setTab("pools");
+  }, [canShowDrawTab, state, tab]);
 
   if (!state) {
     return (
@@ -560,7 +582,7 @@ export default function SweepstakeClient({
             {demoMode
               ? "Sweepstake demo"
               : adminOverview
-                ? "All pools overview"
+                ? state.group?.name ?? "Group overview"
                 : `${state.participant?.name}'s live draw`}
           </h1>
           <p className="subcopy">
@@ -568,7 +590,7 @@ export default function SweepstakeClient({
               ? "Pre-filled example with live board, fixtures, rankings and result logic."
               : adminOverview
                 ? `${state.allDraws.length}/${state.teams.length} countries claimed across ${state.participants.length} players.`
-                : `${state.allDraws.length}/48 countries claimed. Neon locks every country once.`}
+                : `${state.group?.name ?? "Private group"} - ${state.allDraws.length}/${state.teams.length} countries claimed.`}
           </p>
         </div>
         <img
@@ -604,7 +626,7 @@ export default function SweepstakeClient({
 
       <nav className="tabs" aria-label="Sweepstake views">
         {[
-          ...(adminOverview ? [] : [["draw", Sparkles, "Draw"]]),
+          ...(canShowDrawTab ? [["draw", Sparkles, "Draw"]] : []),
           ["pools", Users, "Pools"],
           ["bet-pool", DollarSign, "Bet Pool"],
           ["fixtures", CalendarDays, "Fixtures"],
@@ -623,7 +645,7 @@ export default function SweepstakeClient({
 
       {message && <p className="notice">{message}</p>}
 
-      {tab === "draw" && (
+      {tab === "draw" && canShowDrawTab && (
         <>
           <section className="watch-panel">
             <header>
@@ -657,7 +679,9 @@ export default function SweepstakeClient({
               <p>
                 {demoMode
                   ? "This preview uses sample draws and results only. It does not reserve any country."
-                  : "The current list has 48 countries for 12 participants, so each person draws four teams. A five-team version needs 60 unique countries."}
+                  : state.group?.allowDraws === false
+                    ? "This group was imported from assigned teams. Draws are locked for every invite link."
+                    : `This group has ${state.teams.length} countries for ${state.participants.length} participants. Neon locks every country once within this group.`}
               </p>
             </div>
             {state.pots.map((pot) => {

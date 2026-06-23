@@ -2,27 +2,36 @@
 
 import { useEffect, useMemo, useState } from "react";
 import SweepstakeClient from "@/app/sweepstake-client";
-import type { AppState } from "@/lib/types";
+import type { AppState, SweepstakeGroupSummary } from "@/lib/types";
+import { WALPLUS_GROUP_ASSIGNMENTS, WALPLUS_GROUP_NAME, WALPLUS_GROUP_SLUG } from "@/lib/group-presets";
+
+type InviteLink = {
+  participantId: number;
+  participantName: string;
+  inviteUrl: string;
+};
+
+const DEFAULT_ASSIGNMENTS = WALPLUS_GROUP_ASSIGNMENTS.map(
+  (assignment) => `${assignment.name}: ${assignment.teams.join(", ")}`
+).join("\n");
 
 export default function AdminPage() {
   const [key, setKey] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [groups, setGroups] = useState<SweepstakeGroupSummary[]>([]);
+  const [selectedGroupSlug, setSelectedGroupSlug] = useState("");
   const [state, setState] = useState<AppState | null>(null);
   const [country, setCountry] = useState("");
   const [finalRank, setFinalRank] = useState("");
   const [stage, setStage] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
-
-  // Load the team list for the dropdown once the organiser is in.
-  useEffect(() => {
-    if (!unlocked) return;
-    fetch("/api/state", { cache: "no-store" })
-      .then((response) => response.json())
-      .then(setState)
-      .catch(() => setMessage("Unable to load admin data"));
-  }, [unlocked]);
+  const [groupName, setGroupName] = useState(WALPLUS_GROUP_NAME);
+  const [groupSlug, setGroupSlug] = useState(WALPLUS_GROUP_SLUG);
+  const [assignmentText, setAssignmentText] = useState(DEFAULT_ASSIGNMENTS);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
 
   const selected = useMemo(
     () => state?.teams.find((team) => team.country === country) ?? null,
@@ -35,6 +44,16 @@ export default function AdminPage() {
     setStage(selected.eliminatedStage ?? "");
     setNote(selected.resultNote ?? "");
   }, [selected]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    void loadGroups();
+  }, [unlocked]);
+
+  useEffect(() => {
+    if (!unlocked || !selectedGroupSlug) return;
+    void loadSelectedState(selectedGroupSlug);
+  }, [unlocked, selectedGroupSlug]);
 
   async function unlock() {
     setUnlocking(true);
@@ -55,6 +74,35 @@ export default function AdminPage() {
     setUnlocked(true);
   }
 
+  async function loadGroups(preferredSlug = selectedGroupSlug) {
+    const response = await fetch("/api/admin/groups", {
+      cache: "no-store",
+      headers: { "x-admin-key": key }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setMessage(payload.error ?? "Unable to load groups");
+      return;
+    }
+
+    setGroups(payload.groups ?? []);
+    const nextSlug = preferredSlug || payload.groups?.[0]?.slug || "";
+    if (nextSlug) setSelectedGroupSlug(nextSlug);
+  }
+
+  async function loadSelectedState(slug: string) {
+    const response = await fetch(`/api/admin/state?group=${encodeURIComponent(slug)}`, {
+      cache: "no-store",
+      headers: { "x-admin-key": key }
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setMessage(payload.error ?? "Unable to load selected group");
+      return;
+    }
+    setState(payload);
+  }
+
   async function saveResult() {
     setMessage("Saving...");
     const response = await fetch("/api/admin/result", {
@@ -71,12 +119,43 @@ export default function AdminPage() {
 
     setMessage(response.ok ? "Saved" : "Save failed");
 
-    if (response.ok) {
-      fetch("/api/state", { cache: "no-store" })
-        .then((res) => res.json())
-        .then(setState)
-        .catch(() => {});
+    if (response.ok && selectedGroupSlug) {
+      await loadSelectedState(selectedGroupSlug);
     }
+  }
+
+  async function createGroup() {
+    let participants;
+    try {
+      participants = parseAssignments(assignmentText);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not parse assignments");
+      return;
+    }
+
+    setCreatingGroup(true);
+    setMessage("Creating group...");
+    const response = await fetch("/api/admin/groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": key },
+      body: JSON.stringify({
+        name: groupName,
+        slug: groupSlug,
+        participants
+      })
+    });
+    const payload = await response.json();
+    setCreatingGroup(false);
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not create group");
+      return;
+    }
+
+    setInviteLinks(payload.inviteLinks ?? []);
+    setMessage(`Created ${payload.group.name}`);
+    await loadGroups(payload.group.slug);
+    await loadSelectedState(payload.group.slug);
   }
 
   if (!unlocked) {
@@ -112,7 +191,77 @@ export default function AdminPage() {
 
   return (
     <>
-      <SweepstakeClient adminOverview initialTab="pools" />
+      <section className="shell admin-results">
+        <div className="topbar compact">
+          <div>
+            <p className="eyebrow">Group control</p>
+            <h1>Sweepstake groups</h1>
+          </div>
+        </div>
+        <div className="admin-grid">
+          <label>
+            View group
+            <select value={selectedGroupSlug} onChange={(event) => setSelectedGroupSlug(event.target.value)}>
+              {groups.map((group) => (
+                <option key={group.slug} value={group.slug}>
+                  {group.name} - {group.participantCount} players / {group.drawCount} teams
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="primary-button" onClick={() => loadGroups()} type="button">
+            Refresh groups
+          </button>
+        </div>
+
+        <div className="admin-grid admin-grid--import">
+          <label>
+            New group name
+            <input value={groupName} onChange={(event) => setGroupName(event.target.value)} />
+          </label>
+          <label>
+            URL slug
+            <input value={groupSlug} onChange={(event) => setGroupSlug(event.target.value)} />
+          </label>
+          <label className="wide">
+            Assigned teams
+            <textarea value={assignmentText} onChange={(event) => setAssignmentText(event.target.value)} rows={10} />
+          </label>
+          <button className="primary-button" onClick={createGroup} disabled={creatingGroup} type="button">
+            {creatingGroup ? "Creating..." : "Create / update group"}
+          </button>
+          <p className="muted">{message}</p>
+        </div>
+
+        {inviteLinks.length > 0 && (
+          <div className="admin-invites">
+            <p className="eyebrow">Generated invite links</p>
+            {inviteLinks.map((invite) => (
+              <p key={invite.participantId}>
+                <strong>{invite.participantName}</strong>: <a href={invite.inviteUrl}>{invite.inviteUrl}</a>
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {state ? (
+        <SweepstakeClient
+          key={selectedGroupSlug}
+          adminOverview
+          initialTab="pools"
+          initialState={state}
+          adminKey={key}
+          adminStateUrl={`/api/admin/state?group=${encodeURIComponent(selectedGroupSlug)}`}
+        />
+      ) : (
+        <main className="shell">
+          <section className="loading-panel">
+            <p>Loading selected group...</p>
+          </section>
+        </main>
+      )}
+
       <section className="shell admin-results">
         <div className="topbar compact">
           <div>
@@ -161,4 +310,24 @@ export default function AdminPage() {
       </section>
     </>
   );
+}
+
+function parseAssignments(value: string) {
+  const rows = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!rows.length) throw new Error("Add at least one assignment line");
+
+  return rows.map((line) => {
+    const [name, teamsText] = line.split(":");
+    if (!name || !teamsText) throw new Error(`Use "Name: Team, Team" format for: ${line}`);
+    const teams = teamsText
+      .split(",")
+      .map((team) => team.trim())
+      .filter(Boolean);
+    if (!teams.length) throw new Error(`${name.trim()} needs at least one team`);
+    return { name: name.trim(), teams };
+  });
 }

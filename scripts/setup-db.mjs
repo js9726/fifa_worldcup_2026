@@ -28,8 +28,27 @@ if (!databaseUrl) {
 const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
 
 const tokenFor = () => crypto.randomBytes(18).toString("base64url");
+const DEFAULT_GROUP_SLUG = "existing-neon-pool";
+const DEFAULT_GROUP_NAME = "Existing Neon Pool";
 
 await sql.begin(async (tx) => {
+  await tx`
+    create table if not exists sweepstake_groups (
+      id serial primary key,
+      slug text not null unique,
+      name text not null,
+      allow_draws boolean not null default true,
+      created_at timestamptz not null default now()
+    )
+  `;
+
+  await tx`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
+  await tx`
+    insert into sweepstake_groups (slug, name, allow_draws)
+    values (${DEFAULT_GROUP_SLUG}, ${DEFAULT_GROUP_NAME}, true)
+    on conflict (slug) do nothing
+  `;
+
   await tx`
     create table if not exists pots (
       id integer primary key,
@@ -42,7 +61,8 @@ await sql.begin(async (tx) => {
   await tx`
     create table if not exists participants (
       id serial primary key,
-      name text not null unique,
+      pool_id integer not null references sweepstake_groups(id),
+      name text not null,
       invite_token text not null unique,
       created_at timestamptz not null default now()
     )
@@ -71,12 +91,11 @@ await sql.begin(async (tx) => {
   await tx`
     create table if not exists draws (
       id serial primary key,
+      pool_id integer not null references sweepstake_groups(id),
       participant_id integer not null references participants(id) on delete cascade,
       team_id integer not null references teams(id) on delete restrict,
       pot_id integer not null references pots(id),
-      drawn_at timestamptz not null default now(),
-      unique(participant_id, pot_id),
-      unique(team_id)
+      drawn_at timestamptz not null default now()
     )
   `;
 
@@ -120,6 +139,7 @@ await sql.begin(async (tx) => {
   await tx`
     create table if not exists bet_offers (
       id serial primary key,
+      pool_id integer not null references sweepstake_groups(id),
       fixture_id integer not null references fixtures(id) on delete cascade,
       creator_participant_id integer not null references participants(id) on delete cascade,
       market text not null,
@@ -148,6 +168,46 @@ await sql.begin(async (tx) => {
     )
   `;
 
+  await tx`alter table participants add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update participants
+    set pool_id = (select id from sweepstake_groups where slug = ${DEFAULT_GROUP_SLUG})
+    where pool_id is null
+  `;
+  await tx`alter table participants alter column pool_id set not null`;
+
+  await tx`alter table draws add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update draws d
+    set pool_id = p.pool_id
+    from participants p
+    where d.participant_id = p.id
+      and d.pool_id is null
+  `;
+  await tx`alter table draws alter column pool_id set not null`;
+
+  await tx`alter table bet_offers add column if not exists pool_id integer references sweepstake_groups(id)`;
+  await tx`
+    update bet_offers o
+    set pool_id = p.pool_id
+    from participants p
+    where o.creator_participant_id = p.id
+      and o.pool_id is null
+  `;
+  await tx`alter table bet_offers alter column pool_id set not null`;
+
+  await tx`alter table participants drop constraint if exists participants_name_key`;
+  await tx`alter table draws drop constraint if exists draws_participant_id_pot_id_key`;
+  await tx`alter table draws drop constraint if exists draws_team_id_key`;
+  await tx`create unique index if not exists participants_pool_name_unique on participants(pool_id, name)`;
+  await tx`create unique index if not exists draws_pool_team_unique on draws(pool_id, team_id)`;
+  await tx`create index if not exists draws_pool_participant_idx on draws(pool_id, participant_id)`;
+  await tx`create index if not exists bet_offers_pool_id_idx on bet_offers(pool_id)`;
+
+  const [{ id: defaultGroupId }] = await tx`
+    select id from sweepstake_groups where slug = ${DEFAULT_GROUP_SLUG} limit 1
+  `;
+
   for (const pot of seed.pots) {
     await tx`
       insert into pots (id, name, label, colour)
@@ -161,9 +221,9 @@ await sql.begin(async (tx) => {
 
   for (const name of seed.participants) {
     await tx`
-      insert into participants (name, invite_token)
-      values (${name}, ${tokenFor()})
-      on conflict (name) do nothing
+      insert into participants (pool_id, name, invite_token)
+      values (${defaultGroupId}, ${name}, ${tokenFor()})
+      on conflict (pool_id, name) do nothing
     `;
   }
 
@@ -204,8 +264,10 @@ await sql.begin(async (tx) => {
 });
 
 const participants = await sql`
-  select name, invite_token
-  from participants
+  select p.name, p.invite_token
+  from participants p
+  join sweepstake_groups g on g.id = p.pool_id
+  where g.slug = ${DEFAULT_GROUP_SLUG}
   order by name
 `;
 

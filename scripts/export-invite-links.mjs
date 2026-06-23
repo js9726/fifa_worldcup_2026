@@ -12,6 +12,8 @@ const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://fifa-worldcup-2026-s
   /\/+$/,
   ""
 );
+const groupArg = process.argv.find((arg) => arg.startsWith("--group="));
+const groupSlug = groupArg ? groupArg.slice("--group=".length).trim() : "";
 
 if (!databaseUrl) {
   console.error("DATABASE_URL is required. Put it in .env.local or the shell before running export:invites.");
@@ -19,10 +21,19 @@ if (!databaseUrl) {
 }
 
 const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
-const participants = await sql`
-  select id, name, invite_token
-  from participants
-  order by id
+const participants = groupSlug
+  ? await sql`
+  select p.id, p.name, p.invite_token, g.name as group_name, g.slug as group_slug
+  from participants p
+  join sweepstake_groups g on g.id = p.pool_id
+  where g.slug = ${groupSlug}
+  order by p.id
+`
+  : await sql`
+  select p.id, p.name, p.invite_token, g.name as group_name, g.slug as group_slug
+  from participants p
+  join sweepstake_groups g on g.id = p.pool_id
+  order by p.id
 `;
 await sql.end();
 
@@ -35,11 +46,11 @@ const mdLines = [
   `Generated: ${generatedAt}`,
   `App: ${appUrl}`,
   "",
-  "| # | Participant | Invite link |",
-  "|---:|---|---|",
+  "| # | Group | Participant | Invite link |",
+  "|---:|---|---|---|",
   ...participants.map((participant) => {
     const name = cleanDisplayName(participant.name);
-    return `| ${participant.id} | ${escapeMarkdown(name)} | [Open invite](${appUrl}/invite/${participant.invite_token}) |`;
+    return `| ${participant.id} | ${escapeMarkdown(participant.group_name)} | ${escapeMarkdown(name)} | [Open invite](${appUrl}/invite/${participant.invite_token}) |`;
   }),
   ""
 ];
@@ -50,7 +61,8 @@ const txtLines = [
   `Generated: ${generatedAt}`,
   "",
   ...participants.map(
-    (participant) => `${cleanDisplayName(participant.name)}: ${appUrl}/invite/${participant.invite_token}`
+    (participant) =>
+      `${participant.group_name} - ${cleanDisplayName(participant.name)}: ${appUrl}/invite/${participant.invite_token}`
   ),
   ""
 ];

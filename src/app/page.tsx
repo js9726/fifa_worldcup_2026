@@ -19,8 +19,8 @@ export default function HomePage() {
       <section className="home-panel">
         <h2>Private sweepstake dashboard</h2>
         <p>
-          Open your personal invite link to draw your countries. Every draw is stored in Neon and
-          each country can only be claimed once.
+          Open your personal invite link to view your group. Every draw is stored in Neon and each
+          country can only be claimed once inside the same group.
         </p>
         <div className="home-actions">
           <Link href="/demo" className="primary-button">

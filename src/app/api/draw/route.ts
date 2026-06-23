@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
-import { mapTeam } from "@/lib/state";
+import { ensureBettingTables, mapTeam } from "@/lib/state";
+import { ensureGroupSchema } from "@/lib/groups";
 import type { Draw } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -19,17 +20,24 @@ export async function POST(request: NextRequest) {
   const sql = getSql();
 
   try {
+    await ensureBettingTables(sql);
+    await ensureGroupSchema(sql);
+
     const draw = await sql.begin(async (tx) => {
       const participantRows = (await tx`
-        select id, name
-        from participants
-        where invite_token = ${token}
+        select p.id, p.name, p.pool_id, g.allow_draws
+        from participants p
+        join sweepstake_groups g on g.id = p.pool_id
+        where p.invite_token = ${token}
         limit 1
-      `) as Array<{ id: number; name: string }>;
+      `) as Array<{ id: number; name: string; pool_id: number; allow_draws: boolean }>;
       const [participant] = participantRows;
 
       if (!participant) {
         throw new Response("Invite link not recognised", { status: 404 });
+      }
+      if (!participant.allow_draws) {
+        throw new Response("This group already has assigned teams. Draws are locked.", { status: 409 });
       }
 
       const existingRows = (await tx`
@@ -42,6 +50,7 @@ export async function POST(request: NextRequest) {
         join teams t on t.id = d.team_id
         join pots p on p.id = t.pot_id
         where d.participant_id = ${participant.id}
+          and d.pool_id = ${participant.pool_id}
           and d.pot_id = ${requestedPotId}
         limit 1
       `) as Array<TeamRow & { drawn_at: string }>;
@@ -68,6 +77,7 @@ export async function POST(request: NextRequest) {
             select 1
             from draws d
             where d.team_id = t.id
+              and d.pool_id = ${participant.pool_id}
           )
         order by random()
         limit 1
@@ -80,8 +90,8 @@ export async function POST(request: NextRequest) {
       }
 
       const insertedRows = (await tx`
-        insert into draws (participant_id, team_id, pot_id)
-        values (${participant.id}, ${team.id}, ${requestedPotId})
+        insert into draws (pool_id, participant_id, team_id, pot_id)
+        values (${participant.pool_id}, ${participant.id}, ${team.id}, ${requestedPotId})
         returning drawn_at::text
       `) as Array<{ drawn_at: string }>;
       const [inserted] = insertedRows;

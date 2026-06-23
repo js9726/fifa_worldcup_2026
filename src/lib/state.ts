@@ -1,5 +1,6 @@
 import { getSql } from "./db";
 import { buildBettingState } from "./betting";
+import { ensureGroupSchema, mapGroup } from "./groups";
 import type {
   AppState,
   BetAcceptance,
@@ -13,6 +14,7 @@ import type {
   Fixture,
   Participant,
   Pot,
+  SweepstakeGroup,
   Team
 } from "./types";
 
@@ -48,6 +50,7 @@ let bettingSchemaReady: Promise<void> | null = null;
 
 type BetOfferRow = {
   id: number;
+  pool_id: number;
   fixture_id: number;
   creator_participant_id: number;
   creator_name: string;
@@ -61,6 +64,25 @@ type BetOfferRow = {
   status: string;
   created_at: string;
   note: string | null;
+};
+
+type StateOptions = {
+  inviteToken?: string | null;
+  groupSlug?: string | null;
+};
+
+type ParticipantRow = {
+  id: number;
+  name: string;
+  groupId: number;
+};
+
+type StateGroupRow = {
+  id: number;
+  slug: string;
+  name: string;
+  allow_draws: boolean;
+  created_at: string;
 };
 
 type BetAcceptanceRow = {
@@ -136,11 +158,12 @@ export function ensureBettingTables(sql: SqlClient = getSql()) {
   return bettingSchemaReady;
 }
 
-async function getBetOffers(sql: SqlClient): Promise<BetOffer[]> {
+async function getBetOffers(sql: SqlClient, groupId: number): Promise<BetOffer[]> {
   const [offerRows, acceptanceRows] = await Promise.all([
     sql<BetOfferRow[]>`
       select
         o.id,
+        o.pool_id,
         o.fixture_id,
         o.creator_participant_id,
         c.name as creator_name,
@@ -156,6 +179,7 @@ async function getBetOffers(sql: SqlClient): Promise<BetOffer[]> {
         o.note
       from bet_offers o
       join participants c on c.id = o.creator_participant_id
+      where o.pool_id = ${groupId}
       order by o.created_at desc, o.id desc
     `,
     sql<BetAcceptanceRow[]>`
@@ -171,6 +195,8 @@ async function getBetOffers(sql: SqlClient): Promise<BetOffer[]> {
         a.accepted_at::text as accepted_at
       from bet_acceptances a
       join participants p on p.id = a.participant_id
+      join bet_offers o on o.id = a.offer_id
+      where o.pool_id = ${groupId}
       order by a.accepted_at, a.id
     `
   ]);
@@ -202,6 +228,7 @@ async function getBetOffers(sql: SqlClient): Promise<BetOffer[]> {
 
     return {
       id: row.id,
+      groupId: row.pool_id,
       fixtureId: row.fixture_id,
       creatorParticipantId: row.creator_participant_id,
       creatorName: row.creator_name,
@@ -243,14 +270,26 @@ export function mapTeam(row: TeamRow): Team {
   };
 }
 
-export async function getAppState(inviteToken?: string | null): Promise<AppState> {
+export async function getAppState(input?: string | null | StateOptions): Promise<AppState> {
+  const options =
+    typeof input === "string" || input === null || input === undefined ? { inviteToken: input } : input;
+  const inviteToken = options.inviteToken ?? null;
+  const groupSlug = options.groupSlug ?? null;
   const sql = getSql();
-  await Promise.all([ensureOddsColumns(sql), ensureBettingTables(sql)]);
+  await ensureBettingTables(sql);
+  await Promise.all([ensureOddsColumns(sql), ensureGroupSchema(sql)]);
+
+  const context = await resolveStateContext(sql, { inviteToken, groupSlug });
+  if (!context.group) return emptyAppState();
+
+  const groupId = context.group.id;
+  const participant = context.participant;
 
   const [participantRows, potRows, teamRows, drawRows, fixtureRows, betOffers] = await Promise.all([
-    sql<Participant[]>`
-      select id, name
+    sql<ParticipantRow[]>`
+      select id, name, pool_id as "groupId"
       from participants
+      where pool_id = ${groupId}
       order by name
     `,
     sql<Array<Pot & { available: string | number; total: string | number }>>`
@@ -263,7 +302,7 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
         count(t.id) filter (where d.id is null)::int as available
       from pots p
       left join teams t on t.pot_id = p.id
-      left join draws d on d.team_id = t.id
+      left join draws d on d.team_id = t.id and d.pool_id = ${groupId}
       group by p.id
       order by p.id
     `,
@@ -288,6 +327,7 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
       join participants on participants.id = d.participant_id
       join teams t on t.id = d.team_id
       join pots p on p.id = t.pot_id
+      where d.pool_id = ${groupId}
       order by participants.name, t.pot_id
     `,
     sql<FixtureRow[]>`
@@ -312,24 +352,15 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
         ap.name as "awayOwner"
       from fixtures f
       left join teams ht on ht.country = f.home_country
-      left join draws hd on hd.team_id = ht.id
+      left join draws hd on hd.team_id = ht.id and hd.pool_id = ${groupId}
       left join participants hp on hp.id = hd.participant_id
       left join teams at on at.country = f.away_country
-      left join draws ad on ad.team_id = at.id
+      left join draws ad on ad.team_id = at.id and ad.pool_id = ${groupId}
       left join participants ap on ap.id = ad.participant_id
       order by f.kickoff
     `,
-    getBetOffers(sql)
+    getBetOffers(sql, groupId)
   ]);
-
-  const participant = inviteToken
-    ? (await sql<Participant[]>`
-        select id, name
-        from participants
-        where invite_token = ${inviteToken}
-        limit 1
-      `)[0] ?? null
-    : null;
 
   const allDraws: Draw[] = drawRows.map((row) => ({
     participantName: row.participant_name,
@@ -339,6 +370,7 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
   }));
 
   return {
+    group: context.group,
     participant,
     participants: participantRows,
     pots: potRows.map((pot) => ({
@@ -356,5 +388,65 @@ export async function getAppState(inviteToken?: string | null): Promise<AppState
     })),
     teams: teamRows.map(mapTeam),
     betting: buildBettingState(participantRows, participant, betOffers)
+  };
+}
+
+async function resolveStateContext(
+  sql: SqlClient,
+  { inviteToken, groupSlug }: { inviteToken: string | null; groupSlug: string | null }
+): Promise<{ group: SweepstakeGroup | null; participant: Participant | null }> {
+  if (inviteToken) {
+    const [row] = await sql<Array<ParticipantRow & { slug: string; group_name: string; allow_draws: boolean; created_at: string }>>`
+      select
+        p.id,
+        p.name,
+        p.pool_id as "groupId",
+        g.slug,
+        g.name as group_name,
+        g.allow_draws,
+        g.created_at::text as created_at
+      from participants p
+      join sweepstake_groups g on g.id = p.pool_id
+      where p.invite_token = ${inviteToken}
+      limit 1
+    `;
+    if (!row) return { group: null, participant: null };
+
+    return {
+      group: mapGroup({
+        id: row.groupId,
+        slug: row.slug,
+        name: row.group_name,
+        allow_draws: row.allow_draws,
+        created_at: row.created_at
+      }),
+      participant: { id: row.id, name: row.name, groupId: row.groupId }
+    };
+  }
+
+  if (groupSlug) {
+    const [row] = await sql<StateGroupRow[]>`
+      select id, slug, name, allow_draws, created_at::text as created_at
+      from sweepstake_groups
+      where slug = ${groupSlug}
+      limit 1
+    `;
+    return { group: row ? mapGroup(row) : null, participant: null };
+  }
+
+  return { group: null, participant: null };
+}
+
+function emptyAppState(): AppState {
+  return {
+    group: null,
+    participant: null,
+    participants: [],
+    pots: [],
+    myDraws: [],
+    allDraws: [],
+    fixtures: [],
+    teams: [],
+    betting: buildBettingState([], null, [])
   };
 }

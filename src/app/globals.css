@@ -1412,6 +1412,30 @@ button {
   grid-column: 1 / -1;
 }
 
+.admin-grid--import {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 20px;
+}
+
+.admin-invites {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.admin-invites p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-invites a {
+  color: var(--gold);
+  font-weight: 750;
+}
+
 .admin-gate {
   display: grid;
   gap: 14px;

@@ -6,9 +6,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token");
-  const state = await getAppState(token);
+  if (!token) {
+    return NextResponse.json({ error: "Invite token is required" }, { status: 400 });
+  }
 
-  if (token && !state.participant) {
+  const state = await getAppState({ inviteToken: token });
+
+  if (!state.participant) {
     return NextResponse.json({ error: "Invite link not recognised" }, { status: 404 });
   }
 
