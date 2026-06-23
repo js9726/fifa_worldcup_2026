@@ -552,7 +552,7 @@ export default function SweepstakeClient({
     [state]
   );
   const tournamentStats = useMemo(() => (state ? getTournamentStats(state) : null), [state]);
-  const canShowDrawTab = !adminOverview && (demoMode || state?.group?.allowDraws !== false);
+  const canShowDrawTab = !adminOverview;
 
   useEffect(() => {
     if (state && tab === "draw" && !canShowDrawTab) setTab("pools");
@@ -684,32 +684,40 @@ export default function SweepstakeClient({
                     : `This group has ${state.teams.length} countries for ${state.participants.length} participants. Neon locks every country once within this group.`}
               </p>
             </div>
-            {state.pots.map((pot) => {
-              const existing = state.myDraws.find((draw) => draw.team.potId === pot.id);
-              return (
-                <article className={clsx("draw-card", pot.colour)} key={pot.id}>
-                  <div>
-                    <p className="eyebrow">{pot.name}</p>
-                    <h2>{pot.label}</h2>
-                    <p className="muted">
-                      {pot.available}/{pot.total} left
-                    </p>
-                  </div>
-                  {existing ? (
-                    <TeamTile team={existing.team} compact />
-                  ) : (
-                    <button
-                      className="primary-button"
-                      onClick={() => drawPot(pot)}
-                      disabled={drawingPot === pot.id || drawnPotIds.has(pot.id) || pot.available === 0}
-                    >
-                      {drawingPot === pot.id ? <RefreshCw className="spin" /> : <Sparkles />}
-                      <span>Draw</span>
-                    </button>
-                  )}
-                </article>
-              );
-            })}
+            {state.group?.allowDraws === false ? (
+              <div className="assigned-team-grid">
+                {state.myDraws.map((draw) => (
+                  <TeamTile key={draw.team.id} team={draw.team} />
+                ))}
+              </div>
+            ) : (
+              state.pots.map((pot) => {
+                const existing = state.myDraws.find((draw) => draw.team.potId === pot.id);
+                return (
+                  <article className={clsx("draw-card", pot.colour)} key={pot.id}>
+                    <div>
+                      <p className="eyebrow">{pot.name}</p>
+                      <h2>{pot.label}</h2>
+                      <p className="muted">
+                        {pot.available}/{pot.total} left
+                      </p>
+                    </div>
+                    {existing ? (
+                      <TeamTile team={existing.team} compact />
+                    ) : (
+                      <button
+                        className="primary-button"
+                        onClick={() => drawPot(pot)}
+                        disabled={drawingPot === pot.id || drawnPotIds.has(pot.id) || pot.available === 0}
+                      >
+                        {drawingPot === pot.id ? <RefreshCw className="spin" /> : <Sparkles />}
+                        <span>Draw</span>
+                      </button>
+                    )}
+                  </article>
+                );
+              })
+            )}
           </section>
         </>
       )}

@@ -349,6 +349,14 @@ button {
   gap: 12px;
 }
 
+.assigned-team-grid {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
 .rules-panel,
 .draw-card,
 .pool-card,
@@ -1486,7 +1494,8 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .rules-panel {
+  .rules-panel,
+  .assigned-team-grid {
     grid-column: 1 / -1;
   }
 }
