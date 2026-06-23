@@ -172,7 +172,8 @@ export async function createGroupFromAssignments({
   slug,
   assignments,
   appUrl,
-  allowDraws = false
+  allowDraws = false,
+  teamsPerParticipant = null
 }: {
   sql?: SqlClient;
   name: string;
@@ -180,6 +181,7 @@ export async function createGroupFromAssignments({
   assignments: PoolAssignment[];
   appUrl: string;
   allowDraws?: boolean;
+  teamsPerParticipant?: number | null;
 }): Promise<{ group: SweepstakeGroup; inviteLinks: CreatedInviteLink[] }> {
   await ensureGroupSchema(sql);
 
@@ -189,7 +191,7 @@ export async function createGroupFromAssignments({
   const groupSlug = slugifyGroupName(slug || cleanName);
   if (!groupSlug) throw new Error("Group slug is required");
 
-  const preparedAssignments = prepareAssignments(assignments);
+  const preparedAssignments = prepareAssignments(assignments, teamsPerParticipant);
   const countries = await sql<Array<{ id: number; country: string; pot_id: number }>>`
     select id, country, pot_id
     from teams
@@ -256,9 +258,12 @@ export async function createGroupFromAssignments({
   });
 }
 
-function prepareAssignments(assignments: PoolAssignment[]) {
+function prepareAssignments(assignments: PoolAssignment[], teamsPerParticipant: number | null) {
   if (!Array.isArray(assignments) || assignments.length === 0) {
     throw new Error("At least one participant is required");
+  }
+  if (teamsPerParticipant !== null && teamsPerParticipant !== 4 && teamsPerParticipant !== 5) {
+    throw new Error("Team format must be 4 or 5 teams per participant");
   }
 
   const seenNames = new Set<string>();
@@ -270,6 +275,9 @@ function prepareAssignments(assignments: PoolAssignment[]) {
 
     const teams = (assignment.teams ?? []).map(cleanDisplayName).filter(Boolean);
     if (!teams.length) throw new Error(`${name} needs at least one team`);
+    if (teamsPerParticipant !== null && teams.length !== teamsPerParticipant) {
+      throw new Error(`${name} needs exactly ${teamsPerParticipant} assigned teams`);
+    }
 
     return { name, teams };
   });

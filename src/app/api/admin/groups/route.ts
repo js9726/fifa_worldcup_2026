@@ -10,6 +10,7 @@ type CreateGroupBody = {
   key?: string;
   name?: string;
   slug?: string | null;
+  teamsPerParticipant?: number | null;
   participants?: PoolAssignment[];
 };
 
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
       slug: body.slug ?? null,
       assignments: body.participants ?? [],
       appUrl,
-      allowDraws: false
+      allowDraws: false,
+      teamsPerParticipant: body.teamsPerParticipant ?? null
     });
 
     return NextResponse.json(result);

@@ -349,12 +349,20 @@ button {
   gap: 12px;
 }
 
+.assigned-draw-grid {
+  grid-template-columns: minmax(300px, 1.1fr) minmax(0, 3fr);
+}
+
 .assigned-team-grid {
   grid-column: 2 / -1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   align-content: start;
+}
+
+.assigned-card {
+  min-height: 280px;
 }
 
 .rules-panel,

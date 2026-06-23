@@ -29,6 +29,7 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [groupName, setGroupName] = useState(WALPLUS_GROUP_NAME);
   const [groupSlug, setGroupSlug] = useState(WALPLUS_GROUP_SLUG);
+  const [teamsPerParticipant, setTeamsPerParticipant] = useState(5);
   const [assignmentText, setAssignmentText] = useState(DEFAULT_ASSIGNMENTS);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
@@ -127,7 +128,7 @@ export default function AdminPage() {
   async function createGroup() {
     let participants;
     try {
-      participants = parseAssignments(assignmentText);
+      participants = parseAssignments(assignmentText, teamsPerParticipant);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not parse assignments");
       return;
@@ -141,6 +142,7 @@ export default function AdminPage() {
       body: JSON.stringify({
         name: groupName,
         slug: groupSlug,
+        teamsPerParticipant,
         participants
       })
     });
@@ -222,6 +224,16 @@ export default function AdminPage() {
           <label>
             URL slug
             <input value={groupSlug} onChange={(event) => setGroupSlug(event.target.value)} />
+          </label>
+          <label>
+            Team format
+            <select
+              value={teamsPerParticipant}
+              onChange={(event) => setTeamsPerParticipant(Number(event.target.value))}
+            >
+              <option value={5}>5 teams per participant</option>
+              <option value={4}>4 teams per participant</option>
+            </select>
           </label>
           <label className="wide">
             Assigned teams
@@ -312,7 +324,7 @@ export default function AdminPage() {
   );
 }
 
-function parseAssignments(value: string) {
+function parseAssignments(value: string, teamsPerParticipant: number) {
   const rows = value
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -328,6 +340,9 @@ function parseAssignments(value: string) {
       .map((team) => team.trim())
       .filter(Boolean);
     if (!teams.length) throw new Error(`${name.trim()} needs at least one team`);
+    if (teams.length !== teamsPerParticipant) {
+      throw new Error(`${name.trim()} needs exactly ${teamsPerParticipant} assigned teams`);
+    }
     return { name: name.trim(), teams };
   });
 }

@@ -553,6 +553,9 @@ export default function SweepstakeClient({
   );
   const tournamentStats = useMemo(() => (state ? getTournamentStats(state) : null), [state]);
   const canShowDrawTab = !adminOverview;
+  const isAssignedGroup = state?.group?.allowDraws === false;
+  const drawTabLabel = isAssignedGroup ? "My Teams" : "Draw";
+  const drawPageTitle = isAssignedGroup ? `${state?.participant?.name}'s teams` : `${state?.participant?.name}'s live draw`;
 
   useEffect(() => {
     if (state && tab === "draw" && !canShowDrawTab) setTab("pools");
@@ -583,7 +586,7 @@ export default function SweepstakeClient({
               ? "Sweepstake demo"
               : adminOverview
                 ? state.group?.name ?? "Group overview"
-                : `${state.participant?.name}'s live draw`}
+                : drawPageTitle}
           </h1>
           <p className="subcopy">
             {demoMode
@@ -626,7 +629,7 @@ export default function SweepstakeClient({
 
       <nav className="tabs" aria-label="Sweepstake views">
         {[
-          ...(canShowDrawTab ? [["draw", Sparkles, "Draw"]] : []),
+          ...(canShowDrawTab ? [["draw", Sparkles, drawTabLabel]] : []),
           ["pools", Users, "Pools"],
           ["bet-pool", DollarSign, "Bet Pool"],
           ["fixtures", CalendarDays, "Fixtures"],
@@ -650,7 +653,7 @@ export default function SweepstakeClient({
           <section className="watch-panel">
             <header>
               <div>
-                <p className="eyebrow">My teams today</p>
+                <p className="eyebrow">{isAssignedGroup ? "My assigned teams" : "My teams today"}</p>
                 <h2>Fixture and elimination watch</h2>
               </div>
               <span>{localDateKey(new Date())}</span>
@@ -667,7 +670,7 @@ export default function SweepstakeClient({
             </div>
           </section>
 
-          <section className="draw-grid">
+          <section className={clsx("draw-grid", isAssignedGroup && "assigned-draw-grid")}>
             <div className="rules-panel">
               <h2>Winner Logic</h2>
               <p>
@@ -679,16 +682,25 @@ export default function SweepstakeClient({
               <p>
                 {demoMode
                   ? "This preview uses sample draws and results only. It does not reserve any country."
-                  : state.group?.allowDraws === false
-                    ? "This group was imported from assigned teams. Draws are locked for every invite link."
+                  : isAssignedGroup
+                    ? `This ${state.myDraws.length}-team group was imported from assigned teams. Draws are locked for every invite link.`
                     : `This group has ${state.teams.length} countries for ${state.participants.length} participants. Neon locks every country once within this group.`}
               </p>
             </div>
-            {state.group?.allowDraws === false ? (
+            {isAssignedGroup ? (
               <div className="assigned-team-grid">
-                {state.myDraws.map((draw) => (
-                  <TeamTile key={draw.team.id} team={draw.team} />
-                ))}
+                {state.myDraws.map((draw) => {
+                  const pot = state.pots.find((row) => row.id === draw.team.potId);
+                  return (
+                    <article className={clsx("draw-card", "assigned-card", pot?.colour)} key={draw.team.id}>
+                      <div>
+                        <p className="eyebrow">{draw.team.potName}</p>
+                        <h2>{draw.team.potLabel}</h2>
+                      </div>
+                      <TeamTile team={draw.team} compact />
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               state.pots.map((pot) => {
