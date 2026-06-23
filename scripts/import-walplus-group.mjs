@@ -18,10 +18,14 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const DEFAULT_GROUP_SLUG = "existing-neon-pool";
-const DEFAULT_GROUP_NAME = "Existing Neon Pool";
+const DEFAULT_GROUP_SLUG = "world-cup-2026";
+const DEFAULT_GROUP_NAME = "World Cup Sweepstake 2026";
 const GROUP_NAME = "WALPLUS World Cup 2026";
 const GROUP_SLUG = "walplus-world-cup-2026";
+const PRIZE_POOL_AMOUNT = 400;
+const CHAMPION_PRIZE_AMOUNT = 240;
+const RUNNER_UP_PRIZE_AMOUNT = 120;
+const WOODEN_SPOON_PRIZE_AMOUNT = 40;
 const ASSIGNMENTS = [
   { name: "Ada", teams: ["England", "Senegal", "Panama", "Scotland", "Iraq"] },
   { name: "Jie Sheng", teams: ["Turkiye", "Ecuador", "Ghana", "Belgium", "Switzerland"] },
@@ -60,11 +64,21 @@ for (const assignment of prepared) {
 
 const inviteLinks = await sql.begin(async (tx) => {
   const [group] = await tx`
-    insert into sweepstake_groups (slug, name, allow_draws)
-    values (${GROUP_SLUG}, ${GROUP_NAME}, false)
+    insert into sweepstake_groups (
+      slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+      runner_up_prize_amount, wooden_spoon_prize_amount
+    )
+    values (
+      ${GROUP_SLUG}, ${GROUP_NAME}, false, ${PRIZE_POOL_AMOUNT}, ${CHAMPION_PRIZE_AMOUNT},
+      ${RUNNER_UP_PRIZE_AMOUNT}, ${WOODEN_SPOON_PRIZE_AMOUNT}
+    )
     on conflict (slug) do update set
       name = excluded.name,
-      allow_draws = excluded.allow_draws
+      allow_draws = excluded.allow_draws,
+      prize_pool_amount = excluded.prize_pool_amount,
+      champion_prize_amount = excluded.champion_prize_amount,
+      runner_up_prize_amount = excluded.runner_up_prize_amount,
+      wooden_spoon_prize_amount = excluded.wooden_spoon_prize_amount
     returning id, slug, name
   `;
 
@@ -110,10 +124,21 @@ async function ensureGroupSchema(db) {
       slug text not null unique,
       name text not null,
       allow_draws boolean not null default true,
+      prize_pool_amount numeric(10,2) not null default 600,
+      champion_prize_amount numeric(10,2) not null default 360,
+      runner_up_prize_amount numeric(10,2) not null default 180,
+      wooden_spoon_prize_amount numeric(10,2) not null default 60,
       created_at timestamptz not null default now()
     )
   `;
   await db`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
+  await db`
+    alter table sweepstake_groups
+      add column if not exists prize_pool_amount numeric(10,2) not null default 600,
+      add column if not exists champion_prize_amount numeric(10,2) not null default 360,
+      add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,
+      add column if not exists wooden_spoon_prize_amount numeric(10,2) not null default 60
+  `;
   await db`
     insert into sweepstake_groups (slug, name, allow_draws)
     values (${DEFAULT_GROUP_SLUG}, ${DEFAULT_GROUP_NAME}, true)

@@ -65,6 +65,10 @@ export type SweepstakeGroup = {
   slug: string;
   name: string;
   allowDraws: boolean;
+  prizePoolAmount: number;
+  championPrizeAmount: number;
+  runnerUpPrizeAmount: number;
+  woodenSpoonPrizeAmount: number;
   createdAt: string;
 };
 

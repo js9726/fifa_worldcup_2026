@@ -29,6 +29,7 @@ import type {
   Fixture,
   Participant,
   Pot,
+  SweepstakeGroup,
   Team
 } from "@/lib/types";
 
@@ -50,13 +51,14 @@ type SweepstakeClientProps = {
   initialTab?: Tab;
 };
 
-const PRIZE_POOL = 600;
 const BET_OFFER_DEFAULT_STAKE = 50;
 const BET_CANCEL_LOCK_HOURS = 1;
-const PAYOUTS = {
-  champion: { label: "1st Place", percent: 60, amount: PRIZE_POOL * 0.6 },
-  runnerUp: { label: "2nd Place", percent: 30, amount: PRIZE_POOL * 0.3 },
-  woodenSpoon: { label: "Wooden Spoon", percent: 10, amount: PRIZE_POOL * 0.1 }
+
+type PrizePayouts = {
+  total: number;
+  champion: { label: string; percent: number; amount: number };
+  runnerUp: { label: string; percent: number; amount: number };
+  woodenSpoon: { label: string; percent: number; amount: number };
 };
 
 type TeamWatch = {
@@ -163,6 +165,25 @@ function formatPrize(amount: number) {
   return `RM${amount.toLocaleString("en-MY")}`;
 }
 
+function formatPrizePercent(percent: number) {
+  return Number.isInteger(percent) ? `${percent}` : percent.toFixed(1).replace(/\.0$/, "");
+}
+
+function buildPrizePayouts(group: SweepstakeGroup | null | undefined): PrizePayouts {
+  const total = group?.prizePoolAmount ?? 600;
+  const championAmount = group?.championPrizeAmount ?? 360;
+  const runnerUpAmount = group?.runnerUpPrizeAmount ?? 180;
+  const woodenSpoonAmount = group?.woodenSpoonPrizeAmount ?? 60;
+  const percentFor = (amount: number) => (total > 0 ? (amount / total) * 100 : 0);
+
+  return {
+    total,
+    champion: { label: "1st Place", percent: percentFor(championAmount), amount: championAmount },
+    runnerUp: { label: "2nd Place", percent: percentFor(runnerUpAmount), amount: runnerUpAmount },
+    woodenSpoon: { label: "Wooden Spoon", percent: percentFor(woodenSpoonAmount), amount: woodenSpoonAmount }
+  };
+}
+
 function formatBetAmount(amount: number) {
   return `RM${Math.abs(amount).toLocaleString("en-MY")}`;
 }
@@ -207,20 +228,20 @@ function getPrizeWinners(draws: Draw[]) {
   return { champion, runnerUp, woodenSpoons, worstRank };
 }
 
-function payoutLabelsForParticipant(name: string, winners: ReturnType<typeof getPrizeWinners>) {
+function payoutLabelsForParticipant(name: string, winners: ReturnType<typeof getPrizeWinners>, payouts: PrizePayouts) {
   const labels: string[] = [];
 
   if (winners.champion?.participantName === name) {
-    labels.push(`${PAYOUTS.champion.label} ${formatPrize(PAYOUTS.champion.amount)}`);
+    labels.push(`${payouts.champion.label} ${formatPrize(payouts.champion.amount)}`);
   }
 
   if (winners.runnerUp?.participantName === name) {
-    labels.push(`${PAYOUTS.runnerUp.label} ${formatPrize(PAYOUTS.runnerUp.amount)}`);
+    labels.push(`${payouts.runnerUp.label} ${formatPrize(payouts.runnerUp.amount)}`);
   }
 
   if (winners.woodenSpoons.some((draw) => draw.participantName === name)) {
-    const splitAmount = PAYOUTS.woodenSpoon.amount / winners.woodenSpoons.length;
-    labels.push(`${PAYOUTS.woodenSpoon.label} ${formatPrize(splitAmount)}`);
+    const splitAmount = payouts.woodenSpoon.amount / winners.woodenSpoons.length;
+    labels.push(`${payouts.woodenSpoon.label} ${formatPrize(splitAmount)}`);
   }
 
   return labels;
@@ -542,6 +563,7 @@ export default function SweepstakeClient({
   }, [state]);
 
   const prizeWinners = useMemo(() => getPrizeWinners(state?.allDraws ?? []), [state]);
+  const payouts = useMemo(() => buildPrizePayouts(state?.group), [state?.group]);
   const fixtureGroups = useMemo(() => groupByDate(state?.fixtures ?? []), [state]);
   const myTeamWatch = useMemo(
     () => buildTeamWatch(state?.myDraws ?? [], state?.fixtures ?? []),
@@ -674,10 +696,11 @@ export default function SweepstakeClient({
             <div className="rules-panel">
               <h2>Winner Logic</h2>
               <p>
-                RM600 prize pool: the participant holding the World Cup champion wins 60% (
-                {formatPrize(PAYOUTS.champion.amount)}), the participant holding the runner-up wins
-                30% ({formatPrize(PAYOUTS.runnerUp.amount)}), and the participant holding the worst
-                overall team wins 10% ({formatPrize(PAYOUTS.woodenSpoon.amount)}).
+                {formatPrize(payouts.total)} prize pool: the participant holding the World Cup champion
+                wins {formatPrizePercent(payouts.champion.percent)}% ({formatPrize(payouts.champion.amount)}),
+                the participant holding the runner-up wins {formatPrizePercent(payouts.runnerUp.percent)}% (
+                {formatPrize(payouts.runnerUp.amount)}), and the participant holding the worst overall team
+                wins {formatPrizePercent(payouts.woodenSpoon.percent)}% ({formatPrize(payouts.woodenSpoon.amount)}).
               </p>
               <p>
                 {demoMode
@@ -740,7 +763,7 @@ export default function SweepstakeClient({
             <article className="pool-card" key={pool.name}>
               <header>
                 <h2>{pool.name}&apos;s Pool</h2>
-                <span>{payoutLabelsForParticipant(pool.name, prizeWinners)[0] ?? `${pool.draws.length} teams`}</span>
+                <span>{payoutLabelsForParticipant(pool.name, prizeWinners, payouts)[0] ?? `${pool.draws.length} teams`}</span>
               </header>
               <div className="team-list">
                 {pool.draws.length ? (
@@ -789,24 +812,24 @@ export default function SweepstakeClient({
               icon={<Crown aria-hidden="true" />}
               title="1st Place"
               subtitle="Tournament Winner"
-              amount={formatPrize(PAYOUTS.champion.amount)}
-              percent={`${PAYOUTS.champion.percent}%`}
+              amount={formatPrize(payouts.champion.amount)}
+              percent={`${formatPrizePercent(payouts.champion.percent)}%`}
               draw={prizeWinners.champion}
             />
             <PrizeCard
               icon={<Trophy aria-hidden="true" />}
               title="2nd Place"
               subtitle="Runner-up"
-              amount={formatPrize(PAYOUTS.runnerUp.amount)}
-              percent={`${PAYOUTS.runnerUp.percent}%`}
+              amount={formatPrize(payouts.runnerUp.amount)}
+              percent={`${formatPrizePercent(payouts.runnerUp.percent)}%`}
               draw={prizeWinners.runnerUp}
             />
             <PrizeCard
               icon={<Shield aria-hidden="true" />}
               title="Wooden Spoon"
               subtitle="Worst team overall"
-              amount={formatPrize(PAYOUTS.woodenSpoon.amount)}
-              percent={`${PAYOUTS.woodenSpoon.percent}%`}
+              amount={formatPrize(payouts.woodenSpoon.amount)}
+              percent={`${formatPrizePercent(payouts.woodenSpoon.percent)}%`}
               draw={prizeWinners.woodenSpoons[0] ?? null}
               note={
                 prizeWinners.woodenSpoons.length > 1
@@ -819,7 +842,7 @@ export default function SweepstakeClient({
             {groupedDraws
               .sort((a, b) => a.bestRank - b.bestRank || a.name.localeCompare(b.name))
               .map((pool) => {
-                const labels = payoutLabelsForParticipant(pool.name, prizeWinners);
+                const labels = payoutLabelsForParticipant(pool.name, prizeWinners, payouts);
 
                 return (
                   <article className={clsx("standing-row", labels.length && "has-prize")} key={pool.name}>

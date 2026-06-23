@@ -82,6 +82,10 @@ type StateGroupRow = {
   slug: string;
   name: string;
   allow_draws: boolean;
+  prize_pool_amount: string | number;
+  champion_prize_amount: string | number;
+  runner_up_prize_amount: string | number;
+  wooden_spoon_prize_amount: string | number;
   created_at: string;
 };
 
@@ -396,7 +400,20 @@ async function resolveStateContext(
   { inviteToken, groupSlug }: { inviteToken: string | null; groupSlug: string | null }
 ): Promise<{ group: SweepstakeGroup | null; participant: Participant | null }> {
   if (inviteToken) {
-    const [row] = await sql<Array<ParticipantRow & { slug: string; group_name: string; allow_draws: boolean; created_at: string }>>`
+    const [row] = await sql<
+      Array<
+        ParticipantRow & {
+          slug: string;
+          group_name: string;
+          allow_draws: boolean;
+          prize_pool_amount: string | number;
+          champion_prize_amount: string | number;
+          runner_up_prize_amount: string | number;
+          wooden_spoon_prize_amount: string | number;
+          created_at: string;
+        }
+      >
+    >`
       select
         p.id,
         p.name,
@@ -404,6 +421,10 @@ async function resolveStateContext(
         g.slug,
         g.name as group_name,
         g.allow_draws,
+        g.prize_pool_amount,
+        g.champion_prize_amount,
+        g.runner_up_prize_amount,
+        g.wooden_spoon_prize_amount,
         g.created_at::text as created_at
       from participants p
       join sweepstake_groups g on g.id = p.pool_id
@@ -418,6 +439,10 @@ async function resolveStateContext(
         slug: row.slug,
         name: row.group_name,
         allow_draws: row.allow_draws,
+        prize_pool_amount: row.prize_pool_amount,
+        champion_prize_amount: row.champion_prize_amount,
+        runner_up_prize_amount: row.runner_up_prize_amount,
+        wooden_spoon_prize_amount: row.wooden_spoon_prize_amount,
         created_at: row.created_at
       }),
       participant: { id: row.id, name: row.name, groupId: row.groupId }
@@ -426,7 +451,9 @@ async function resolveStateContext(
 
   if (groupSlug) {
     const [row] = await sql<StateGroupRow[]>`
-      select id, slug, name, allow_draws, created_at::text as created_at
+      select
+        id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
       from sweepstake_groups
       where slug = ${groupSlug}
       limit 1

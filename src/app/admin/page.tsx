@@ -30,9 +30,18 @@ export default function AdminPage() {
   const [groupName, setGroupName] = useState(WALPLUS_GROUP_NAME);
   const [groupSlug, setGroupSlug] = useState(WALPLUS_GROUP_SLUG);
   const [teamsPerParticipant, setTeamsPerParticipant] = useState(5);
+  const [createPrizePoolAmount, setCreatePrizePoolAmount] = useState("400");
+  const [createChampionPrizeAmount, setCreateChampionPrizeAmount] = useState("240");
+  const [createRunnerUpPrizeAmount, setCreateRunnerUpPrizeAmount] = useState("120");
+  const [createWoodenSpoonPrizeAmount, setCreateWoodenSpoonPrizeAmount] = useState("40");
   const [assignmentText, setAssignmentText] = useState(DEFAULT_ASSIGNMENTS);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
+  const [prizePoolAmount, setPrizePoolAmount] = useState("600");
+  const [championPrizeAmount, setChampionPrizeAmount] = useState("360");
+  const [runnerUpPrizeAmount, setRunnerUpPrizeAmount] = useState("180");
+  const [woodenSpoonPrizeAmount, setWoodenSpoonPrizeAmount] = useState("60");
+  const [savingPrizeSettings, setSavingPrizeSettings] = useState(false);
 
   const selected = useMemo(
     () => state?.teams.find((team) => team.country === country) ?? null,
@@ -55,6 +64,14 @@ export default function AdminPage() {
     if (!unlocked || !selectedGroupSlug) return;
     void loadSelectedState(selectedGroupSlug);
   }, [unlocked, selectedGroupSlug]);
+
+  useEffect(() => {
+    if (!state?.group) return;
+    setPrizePoolAmount(String(state.group.prizePoolAmount));
+    setChampionPrizeAmount(String(state.group.championPrizeAmount));
+    setRunnerUpPrizeAmount(String(state.group.runnerUpPrizeAmount));
+    setWoodenSpoonPrizeAmount(String(state.group.woodenSpoonPrizeAmount));
+  }, [state?.group]);
 
   async function unlock() {
     setUnlocking(true);
@@ -143,6 +160,12 @@ export default function AdminPage() {
         name: groupName,
         slug: groupSlug,
         teamsPerParticipant,
+        prizeSettings: buildPrizeSettings({
+          prizePoolAmount: createPrizePoolAmount,
+          championPrizeAmount: createChampionPrizeAmount,
+          runnerUpPrizeAmount: createRunnerUpPrizeAmount,
+          woodenSpoonPrizeAmount: createWoodenSpoonPrizeAmount
+        }),
         participants
       })
     });
@@ -156,6 +179,37 @@ export default function AdminPage() {
 
     setInviteLinks(payload.inviteLinks ?? []);
     setMessage(`Created ${payload.group.name}`);
+    await loadGroups(payload.group.slug);
+    await loadSelectedState(payload.group.slug);
+  }
+
+  async function savePrizeSettings() {
+    if (!selectedGroupSlug) return;
+
+    setSavingPrizeSettings(true);
+    setMessage("Saving prize settings...");
+    const response = await fetch("/api/admin/groups", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "x-admin-key": key },
+      body: JSON.stringify({
+        slug: selectedGroupSlug,
+        prizeSettings: buildPrizeSettings({
+          prizePoolAmount,
+          championPrizeAmount,
+          runnerUpPrizeAmount,
+          woodenSpoonPrizeAmount
+        })
+      })
+    });
+    const payload = await response.json();
+    setSavingPrizeSettings(false);
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not update prize settings");
+      return;
+    }
+
+    setMessage(`Saved prizes for ${payload.group.name}`);
     await loadGroups(payload.group.slug);
     await loadSelectedState(payload.group.slug);
   }
@@ -216,6 +270,28 @@ export default function AdminPage() {
           </button>
         </div>
 
+        <div className="admin-grid admin-grid--prizes">
+          <label>
+            Total prize
+            <input value={prizePoolAmount} onChange={(event) => setPrizePoolAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            1st place
+            <input value={championPrizeAmount} onChange={(event) => setChampionPrizeAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            2nd place
+            <input value={runnerUpPrizeAmount} onChange={(event) => setRunnerUpPrizeAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            Wooden spoon
+            <input value={woodenSpoonPrizeAmount} onChange={(event) => setWoodenSpoonPrizeAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <button className="primary-button" onClick={savePrizeSettings} disabled={savingPrizeSettings || !selectedGroupSlug} type="button">
+            {savingPrizeSettings ? "Saving..." : "Save prize settings"}
+          </button>
+        </div>
+
         <div className="admin-grid admin-grid--import">
           <label>
             New group name
@@ -234,6 +310,22 @@ export default function AdminPage() {
               <option value={5}>5 teams per participant</option>
               <option value={4}>4 teams per participant</option>
             </select>
+          </label>
+          <label>
+            Total prize
+            <input value={createPrizePoolAmount} onChange={(event) => setCreatePrizePoolAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            1st place
+            <input value={createChampionPrizeAmount} onChange={(event) => setCreateChampionPrizeAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            2nd place
+            <input value={createRunnerUpPrizeAmount} onChange={(event) => setCreateRunnerUpPrizeAmount(event.target.value)} inputMode="decimal" />
+          </label>
+          <label>
+            Wooden spoon
+            <input value={createWoodenSpoonPrizeAmount} onChange={(event) => setCreateWoodenSpoonPrizeAmount(event.target.value)} inputMode="decimal" />
           </label>
           <label className="wide">
             Assigned teams
@@ -322,6 +414,20 @@ export default function AdminPage() {
       </section>
     </>
   );
+}
+
+function buildPrizeSettings(values: {
+  prizePoolAmount: string;
+  championPrizeAmount: string;
+  runnerUpPrizeAmount: string;
+  woodenSpoonPrizeAmount: string;
+}) {
+  return {
+    prizePoolAmount: Number(values.prizePoolAmount),
+    championPrizeAmount: Number(values.championPrizeAmount),
+    runnerUpPrizeAmount: Number(values.runnerUpPrizeAmount),
+    woodenSpoonPrizeAmount: Number(values.woodenSpoonPrizeAmount)
+  };
 }
 
 function parseAssignments(value: string, teamsPerParticipant: number) {

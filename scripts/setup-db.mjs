@@ -28,8 +28,8 @@ if (!databaseUrl) {
 const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
 
 const tokenFor = () => crypto.randomBytes(18).toString("base64url");
-const DEFAULT_GROUP_SLUG = "existing-neon-pool";
-const DEFAULT_GROUP_NAME = "Existing Neon Pool";
+const DEFAULT_GROUP_SLUG = "world-cup-2026";
+const DEFAULT_GROUP_NAME = "World Cup Sweepstake 2026";
 
 await sql.begin(async (tx) => {
   await tx`
@@ -38,11 +38,22 @@ await sql.begin(async (tx) => {
       slug text not null unique,
       name text not null,
       allow_draws boolean not null default true,
+      prize_pool_amount numeric(10,2) not null default 600,
+      champion_prize_amount numeric(10,2) not null default 360,
+      runner_up_prize_amount numeric(10,2) not null default 180,
+      wooden_spoon_prize_amount numeric(10,2) not null default 60,
       created_at timestamptz not null default now()
     )
   `;
 
   await tx`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
+  await tx`
+    alter table sweepstake_groups
+      add column if not exists prize_pool_amount numeric(10,2) not null default 600,
+      add column if not exists champion_prize_amount numeric(10,2) not null default 360,
+      add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,
+      add column if not exists wooden_spoon_prize_amount numeric(10,2) not null default 60
+  `;
   await tx`
     insert into sweepstake_groups (slug, name, allow_draws)
     values (${DEFAULT_GROUP_SLUG}, ${DEFAULT_GROUP_NAME}, true)

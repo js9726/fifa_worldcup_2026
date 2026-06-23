@@ -6,8 +6,8 @@ import type { SweepstakeGroup, SweepstakeGroupSummary } from "./types";
 
 type SqlClient = ReturnType<typeof postgres>;
 
-export const DEFAULT_GROUP_SLUG = "existing-neon-pool";
-export const DEFAULT_GROUP_NAME = "Existing Neon Pool";
+export const DEFAULT_GROUP_SLUG = "world-cup-2026";
+export const DEFAULT_GROUP_NAME = "World Cup Sweepstake 2026";
 export { WALPLUS_GROUP_ASSIGNMENTS, WALPLUS_GROUP_NAME, WALPLUS_GROUP_SLUG };
 
 export type PoolAssignment = {
@@ -27,7 +27,18 @@ type GroupRow = {
   slug: string;
   name: string;
   allow_draws: boolean;
+  prize_pool_amount: string | number;
+  champion_prize_amount: string | number;
+  runner_up_prize_amount: string | number;
+  wooden_spoon_prize_amount: string | number;
   created_at: string;
+};
+
+export type PrizeSettingsInput = {
+  prizePoolAmount: number;
+  championPrizeAmount: number;
+  runnerUpPrizeAmount: number;
+  woodenSpoonPrizeAmount: number;
 };
 
 let groupSchemaReady: Promise<void> | null = null;
@@ -40,10 +51,21 @@ export function ensureGroupSchema(sql: SqlClient = getSql()) {
         slug text not null unique,
         name text not null,
         allow_draws boolean not null default true,
+        prize_pool_amount numeric(10,2) not null default 600,
+        champion_prize_amount numeric(10,2) not null default 360,
+        runner_up_prize_amount numeric(10,2) not null default 180,
+        wooden_spoon_prize_amount numeric(10,2) not null default 60,
         created_at timestamptz not null default now()
       )
     `;
     await sql`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
+    await sql`
+      alter table sweepstake_groups
+        add column if not exists prize_pool_amount numeric(10,2) not null default 600,
+        add column if not exists champion_prize_amount numeric(10,2) not null default 360,
+        add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,
+        add column if not exists wooden_spoon_prize_amount numeric(10,2) not null default 60
+    `;
     await sql`
       insert into sweepstake_groups (slug, name, allow_draws)
       values (${DEFAULT_GROUP_SLUG}, ${DEFAULT_GROUP_NAME}, true)
@@ -97,6 +119,10 @@ export function mapGroup(row: GroupRow): SweepstakeGroup {
     slug: row.slug,
     name: row.name,
     allowDraws: row.allow_draws,
+    prizePoolAmount: toNumber(row.prize_pool_amount),
+    championPrizeAmount: toNumber(row.champion_prize_amount),
+    runnerUpPrizeAmount: toNumber(row.runner_up_prize_amount),
+    woodenSpoonPrizeAmount: toNumber(row.wooden_spoon_prize_amount),
     createdAt: row.created_at
   };
 }
@@ -146,6 +172,10 @@ export async function listSweepstakeGroups(sql: SqlClient = getSql()): Promise<S
       g.slug,
       g.name,
       g.allow_draws,
+      g.prize_pool_amount,
+      g.champion_prize_amount,
+      g.runner_up_prize_amount,
+      g.wooden_spoon_prize_amount,
       g.created_at::text as created_at,
       count(distinct p.id)::int as participant_count,
       count(distinct d.id)::int as draw_count,
@@ -173,7 +203,8 @@ export async function createGroupFromAssignments({
   assignments,
   appUrl,
   allowDraws = false,
-  teamsPerParticipant = null
+  teamsPerParticipant = null,
+  prizeSettings = defaultPrizeSettings()
 }: {
   sql?: SqlClient;
   name: string;
@@ -182,6 +213,7 @@ export async function createGroupFromAssignments({
   appUrl: string;
   allowDraws?: boolean;
   teamsPerParticipant?: number | null;
+  prizeSettings?: PrizeSettingsInput;
 }): Promise<{ group: SweepstakeGroup; inviteLinks: CreatedInviteLink[] }> {
   await ensureGroupSchema(sql);
 
@@ -191,6 +223,7 @@ export async function createGroupFromAssignments({
   const groupSlug = slugifyGroupName(slug || cleanName);
   if (!groupSlug) throw new Error("Group slug is required");
 
+  const prizes = validatePrizeSettings(prizeSettings);
   const preparedAssignments = prepareAssignments(assignments, teamsPerParticipant);
   const countries = await sql<Array<{ id: number; country: string; pot_id: number }>>`
     select id, country, pot_id
@@ -219,12 +252,24 @@ export async function createGroupFromAssignments({
 
   return sql.begin(async (tx) => {
     const [groupRow] = await tx<GroupRow[]>`
-      insert into sweepstake_groups (slug, name, allow_draws)
-      values (${groupSlug}, ${cleanName}, ${allowDraws})
+      insert into sweepstake_groups (
+        slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        runner_up_prize_amount, wooden_spoon_prize_amount
+      )
+      values (
+        ${groupSlug}, ${cleanName}, ${allowDraws}, ${prizes.prizePoolAmount},
+        ${prizes.championPrizeAmount}, ${prizes.runnerUpPrizeAmount}, ${prizes.woodenSpoonPrizeAmount}
+      )
       on conflict (slug) do update set
         name = excluded.name,
-        allow_draws = excluded.allow_draws
-      returning id, slug, name, allow_draws, created_at::text as created_at
+        allow_draws = excluded.allow_draws,
+        prize_pool_amount = excluded.prize_pool_amount,
+        champion_prize_amount = excluded.champion_prize_amount,
+        runner_up_prize_amount = excluded.runner_up_prize_amount,
+        wooden_spoon_prize_amount = excluded.wooden_spoon_prize_amount
+      returning
+        id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
     `;
 
     const inviteLinks: CreatedInviteLink[] = [];
@@ -258,6 +303,51 @@ export async function createGroupFromAssignments({
   });
 }
 
+export async function updateGroupPrizeSettings({
+  sql = getSql(),
+  slug,
+  prizeSettings
+}: {
+  sql?: SqlClient;
+  slug: string;
+  prizeSettings: PrizeSettingsInput;
+}) {
+  await ensureGroupSchema(sql);
+  const prizes = validatePrizeSettings(prizeSettings);
+  const [row] = await sql<GroupRow[]>`
+    update sweepstake_groups
+    set
+      prize_pool_amount = ${prizes.prizePoolAmount},
+      champion_prize_amount = ${prizes.championPrizeAmount},
+      runner_up_prize_amount = ${prizes.runnerUpPrizeAmount},
+      wooden_spoon_prize_amount = ${prizes.woodenSpoonPrizeAmount}
+    where slug = ${slug}
+    returning
+      id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+      runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
+  `;
+  if (!row) throw new Error("Group not found");
+  return mapGroup(row);
+}
+
+export function defaultPrizeSettings(): PrizeSettingsInput {
+  return {
+    prizePoolAmount: 600,
+    championPrizeAmount: 360,
+    runnerUpPrizeAmount: 180,
+    woodenSpoonPrizeAmount: 60
+  };
+}
+
+export function walplusPrizeSettings(): PrizeSettingsInput {
+  return {
+    prizePoolAmount: 400,
+    championPrizeAmount: 240,
+    runnerUpPrizeAmount: 120,
+    woodenSpoonPrizeAmount: 40
+  };
+}
+
 function prepareAssignments(assignments: PoolAssignment[], teamsPerParticipant: number | null) {
   if (!Array.isArray(assignments) || assignments.length === 0) {
     throw new Error("At least one participant is required");
@@ -281,6 +371,33 @@ function prepareAssignments(assignments: PoolAssignment[], teamsPerParticipant: 
 
     return { name, teams };
   });
+}
+
+function validatePrizeSettings(input: PrizeSettingsInput) {
+  const values = {
+    prizePoolAmount: Number(input.prizePoolAmount),
+    championPrizeAmount: Number(input.championPrizeAmount),
+    runnerUpPrizeAmount: Number(input.runnerUpPrizeAmount),
+    woodenSpoonPrizeAmount: Number(input.woodenSpoonPrizeAmount)
+  };
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`${key} must be a non-negative amount`);
+    }
+  }
+
+  const tierTotal =
+    values.championPrizeAmount + values.runnerUpPrizeAmount + values.woodenSpoonPrizeAmount;
+  if (Math.round(tierTotal * 100) !== Math.round(values.prizePoolAmount * 100)) {
+    throw new Error("Prize tiers must add up to the total prize pool");
+  }
+
+  return values;
+}
+
+function toNumber(value: string | number) {
+  return typeof value === "number" ? value : Number(value);
 }
 
 function buildCountryMap(countries: string[]) {

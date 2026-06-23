@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql, requireAdminKey } from "@/lib/db";
-import { createGroupFromAssignments, listSweepstakeGroups, type PoolAssignment } from "@/lib/groups";
+import {
+  createGroupFromAssignments,
+  listSweepstakeGroups,
+  updateGroupPrizeSettings,
+  type PoolAssignment,
+  type PrizeSettingsInput
+} from "@/lib/groups";
 import { ensureBettingTables } from "@/lib/state";
 
 export const runtime = "nodejs";
@@ -12,6 +18,13 @@ type CreateGroupBody = {
   slug?: string | null;
   teamsPerParticipant?: number | null;
   participants?: PoolAssignment[];
+  prizeSettings?: PrizeSettingsInput;
+};
+
+type UpdatePrizeBody = {
+  key?: string;
+  slug?: string | null;
+  prizeSettings?: PrizeSettingsInput;
 };
 
 export async function GET(request: NextRequest) {
@@ -48,12 +61,41 @@ export async function POST(request: NextRequest) {
       assignments: body.participants ?? [],
       appUrl,
       allowDraws: false,
-      teamsPerParticipant: body.teamsPerParticipant ?? null
+      teamsPerParticipant: body.teamsPerParticipant ?? null,
+      prizeSettings: body.prizeSettings
     });
 
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not create group";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const body = (await request.json()) as UpdatePrizeBody;
+
+  try {
+    requireAdminKey(request.headers.get("x-admin-key") ?? body.key ?? null);
+  } catch {
+    return NextResponse.json({ error: "Invalid admin key" }, { status: 401 });
+  }
+
+  try {
+    if (!body.slug) throw new Error("Group slug is required");
+    if (!body.prizeSettings) throw new Error("Prize settings are required");
+
+    const sql = getSql();
+    await ensureBettingTables(sql);
+    const group = await updateGroupPrizeSettings({
+      sql,
+      slug: body.slug,
+      prizeSettings: body.prizeSettings
+    });
+
+    return NextResponse.json({ group });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not update prize settings";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
