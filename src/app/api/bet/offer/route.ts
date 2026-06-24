@@ -85,18 +85,9 @@ export async function POST(request: NextRequest) {
       }
 
       const fixtureRows = (await tx`
-        select
-          f.id,
-          f.home_country,
-          f.away_country,
-          f.home_score,
-          f.kickoff <= now() as match_started,
-          ht.id is not null as home_known,
-          at.id is not null as away_known
-        from fixtures f
-        left join teams ht on ht.country = f.home_country
-        left join teams at on at.country = f.away_country
-        where f.id = ${body.fixtureId!}
+        select id, home_country, away_country, home_score, kickoff <= now() as match_started
+        from fixtures
+        where id = ${body.fixtureId!}
         limit 1
       `) as Array<{
         id: number;
@@ -104,16 +95,11 @@ export async function POST(request: NextRequest) {
         away_country: string;
         home_score: number | null;
         match_started: boolean;
-        home_known: boolean;
-        away_known: boolean;
       }>;
       const [fixture] = fixtureRows;
 
       if (!fixture) {
         throw new Response("Fixture not found", { status: 404 });
-      }
-      if (!fixture.home_known || !fixture.away_known) {
-        throw new Response("Betting opens once both fixture teams are confirmed", { status: 409 });
       }
       if (fixture.match_started) {
         throw new Response("Betting has closed - this match has already started", { status: 409 });
