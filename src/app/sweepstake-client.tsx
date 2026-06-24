@@ -253,6 +253,7 @@ function flagUrlFor(country: string) {
 }
 
 function countryFallback(country: string) {
+  if (isPlaceholderFixtureSide(country)) return "TBD";
   return country
     .split(/\s+/)
     .filter(Boolean)
@@ -260,6 +261,14 @@ function countryFallback(country: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function isPlaceholderFixtureSide(country: string) {
+  return /^TBD (home|away) \d+$/i.test(country);
+}
+
+function fixtureSideDisplay(country: string) {
+  return isPlaceholderFixtureSide(country) ? "TBD" : country;
 }
 
 function localDateKey(value: string | Date) {
@@ -1739,6 +1748,8 @@ function FixtureRow({
   const resultSummary = fixtureResultSummary(fixture);
   const winnerBadge = fixtureWinnerBadge(fixture);
   const label = fixtureLabel(fixture, localDateKey(fixture.kickoff) === localDateKey(new Date()));
+  const homeLabel = fixtureSideDisplay(fixture.homeCountry);
+  const awayLabel = fixtureSideDisplay(fixture.awayCountry);
   const kickoff = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
@@ -1754,7 +1765,7 @@ function FixtureRow({
       <div className="fixture-main">
         <strong>
           <CountryFlag country={fixture.homeCountry} fallback={countryFallback(fixture.homeCountry)} />
-          {fixture.homeCountry} {scoreText(fixture)} {fixture.awayCountry}
+          {homeLabel} {scoreText(fixture)} {awayLabel}
           <CountryFlag country={fixture.awayCountry} fallback={countryFallback(fixture.awayCountry)} />
           {winnerBadge && (
             <span className={clsx("match-outcome", winnerBadge.tone)} title={winnerBadge.detail}>
