@@ -70,13 +70,15 @@ try {
 
   const fixtures = await sql`
     select
-      id,
+      fixtures.id,
       kickoff::text as kickoff,
       home_country,
       away_country,
       odds_provider,
       odds_last_updated::text as odds_last_updated
     from fixtures
+    join teams ht on ht.country = fixtures.home_country
+    join teams at on at.country = fixtures.away_country
     where kickoff > now()
       and home_score is null
       and away_score is null

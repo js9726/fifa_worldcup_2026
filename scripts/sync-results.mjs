@@ -35,6 +35,10 @@ function normalise(name) {
     .trim();
 }
 
+function isPlaceholderTeamName(rawName) {
+  return /^(winner|runner[-\s]?up|best|third|3rd|loser|match|tbd)\b/i.test(String(rawName ?? "").trim());
+}
+
 // Normalised alias -> DB country, for names that don't normalise to the same string.
 const ALIASES = {
   "ivory coast": "Cote d'Ivoire",
@@ -65,8 +69,21 @@ function resolveCountry(rawName) {
   const key = normalise(rawName);
   if (NORMALISED_DB.has(key)) return NORMALISED_DB.get(key);
   if (ALIASES[key]) return ALIASES[key];
-  unmatchedNames.add(rawName);
+  if (!isPlaceholderTeamName(rawName)) unmatchedNames.add(rawName);
   return null;
+}
+
+function rawTeamLabel(team) {
+  const value = team?.name || team?.shortName || team?.tla;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function fixtureSideLabel(match, side) {
+  const resolved = side === "home" ? match.home : match.away;
+  if (resolved) return resolved;
+  const raw = rawTeamLabel(side === "home" ? match.homeTeam : match.awayTeam);
+  if (raw) return raw;
+  return `TBD ${side === "home" ? "home" : "away"} ${match.externalId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +346,8 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
   venue: m.venue ?? null,
   stage: m.stage,
   status: m.status,
+  homeTeam: m.homeTeam ?? null,
+  awayTeam: m.awayTeam ?? null,
   home: resolveCountry(m.homeTeam?.name),
   away: resolveCountry(m.awayTeam?.name),
   homeScore: m.score?.fullTime?.home ?? null,
@@ -344,14 +363,20 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
         ? "AWAY"
         : m.score?.winner === "DRAW"
           ? "DRAW"
-          : null
+      : null
 }));
+
+for (const match of matches) {
+  match.homeLabel = fixtureSideLabel(match, "home");
+  match.awayLabel = fixtureSideLabel(match, "away");
+}
 
 const statusCounts = matches.reduce((acc, match) => {
   acc[match.status] = (acc[match.status] ?? 0) + 1;
   return acc;
 }, {});
 const resolvedMatchCount = matches.filter((match) => match.home && match.away).length;
+const placeholderMatchCount = matches.filter((match) => !match.home || !match.away).length;
 const fullTimeScoreCount = matches.filter((match) => match.homeScore !== null && match.awayScore !== null).length;
 const finishedMatchCount = matches.filter((match) => match.status === "FINISHED").length;
 const finishedWithScoreCount = matches.filter(
@@ -381,6 +406,7 @@ const placements = computePlacements(matches, stats);
 if (DRY_RUN) {
   console.log(`[dry-run] competition ${competition}: ${matches.length} matches`, statusCounts);
   console.log(`[dry-run] ${resolvedMatchCount}/${matches.length} matches have both teams resolved to our DB`);
+  console.log(`[dry-run] ${placeholderMatchCount}/${matches.length} matches would be stored as placeholder fixtures`);
   console.log(
     `[dry-run] ${fullTimeScoreCount}/${matches.length} matches currently have full-time scores; ${finishedWithScoreCount}/${finishedMatchCount} finished matches have scores`
   );
@@ -398,6 +424,7 @@ console.log(`football-data.org ${competition}: ${matches.length} match(es)`, sta
 console.log(
   `${resolvedMatchCount}/${matches.length} match(es) resolved to local teams; ${fullTimeScoreCount}/${matches.length} have full-time scores; ${finishedWithScoreCount}/${finishedMatchCount} finished match(es) have scores.`
 );
+console.log(`${placeholderMatchCount}/${matches.length} match(es) will be stored as placeholder fixtures until teams are known.`);
 
 const sql = postgres(databaseUrl, { ssl: "require", max: 1, onnotice: () => undefined });
 let fixturesTouched = 0;
@@ -407,9 +434,10 @@ await sql.begin(async (tx) => {
   await tx`alter table fixtures add column if not exists external_id bigint`;
   await tx`create unique index if not exists fixtures_external_id_key on fixtures (external_id)`;
 
-  // Upsert fixtures for any match whose two teams are both resolved.
+  // Upsert every provider fixture. Resolved group-stage rows get real country
+  // names; unresolved knockout rows stay visible as placeholders until the
+  // provider fills in the teams.
   for (const match of matches) {
-    if (!match.home || !match.away) continue;
     const stageLabel = STAGE_LABELS[match.stage] ?? match.stage ?? "Match";
     const venue = match.venue || "TBD";
 
@@ -419,13 +447,13 @@ await sql.begin(async (tx) => {
           away_score = ${match.awayScore},
           kickoff = ${match.utcDate},
           stage = ${stageLabel},
-          home_country = ${match.home},
-          away_country = ${match.away},
+          home_country = ${match.homeLabel},
+          away_country = ${match.awayLabel},
           venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
       where external_id = ${match.externalId}
     `;
 
-    if (result.count === 0) {
+    if (result.count === 0 && match.home && match.away) {
       result = await tx`
         update fixtures
         set external_id = ${match.externalId},
@@ -442,8 +470,23 @@ await sql.begin(async (tx) => {
 
     if (result.count === 0) {
       result = await tx`
+        update fixtures
+        set external_id = ${match.externalId},
+            home_score = ${match.homeScore},
+            away_score = ${match.awayScore},
+            stage = ${stageLabel},
+            venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
+        where external_id is null
+          and kickoff = ${match.utcDate}
+          and home_country = ${match.homeLabel}
+          and away_country = ${match.awayLabel}
+      `;
+    }
+
+    if (result.count === 0) {
+      result = await tx`
         insert into fixtures (external_id, kickoff, stage, home_country, away_country, venue, home_score, away_score)
-        values (${match.externalId}, ${match.utcDate}, ${stageLabel}, ${match.home}, ${match.away}, ${venue}, ${match.homeScore}, ${match.awayScore})
+        values (${match.externalId}, ${match.utcDate}, ${stageLabel}, ${match.homeLabel}, ${match.awayLabel}, ${venue}, ${match.homeScore}, ${match.awayScore})
         on conflict (external_id) do nothing
       `;
     }

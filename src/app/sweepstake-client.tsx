@@ -292,6 +292,10 @@ function fixtureHasStarted(fixture: Fixture) {
   return new Date(fixture.kickoff).getTime() <= Date.now();
 }
 
+function fixtureHasConfirmedTeams(fixture: Fixture, teamByCountry: Map<string, Team>) {
+  return teamByCountry.has(fixture.homeCountry) && teamByCountry.has(fixture.awayCountry);
+}
+
 function fixtureLabel(fixture: Fixture, isToday: boolean) {
   if (fixtureHasScore(fixture)) return "Result";
   if (fixtureHasStarted(fixture)) return "Awaiting score";
@@ -781,6 +785,7 @@ export default function SweepstakeClient({
         <BetPoolPanel
           betting={state.betting}
           fixtures={state.fixtures}
+          teamByCountry={teamByCountry}
           participant={state.participant}
           demoMode={demoMode}
           token={token}
@@ -920,6 +925,7 @@ async function postBet(path: string, payload: Record<string, unknown>) {
 function BetPoolPanel({
   betting,
   fixtures,
+  teamByCountry,
   participant,
   demoMode,
   token,
@@ -928,6 +934,7 @@ function BetPoolPanel({
 }: {
   betting: BettingState;
   fixtures: Fixture[];
+  teamByCountry: Map<string, Team>;
   participant: Participant | null;
   demoMode: boolean;
   token: string;
@@ -982,6 +989,7 @@ function BetPoolPanel({
 
       <CreateOfferForm
         fixtures={fixtures}
+        teamByCountry={teamByCountry}
         canBet={canBet}
         demoMode={demoMode}
         token={token}
@@ -1126,6 +1134,7 @@ function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
 
 function CreateOfferForm({
   fixtures,
+  teamByCountry,
   canBet,
   demoMode,
   token,
@@ -1133,6 +1142,7 @@ function CreateOfferForm({
   notify
 }: {
   fixtures: Fixture[];
+  teamByCountry: Map<string, Team>;
   canBet: boolean;
   demoMode: boolean;
   token: string;
@@ -1144,10 +1154,13 @@ function CreateOfferForm({
       fixtures
         .filter(
           (fixture) =>
-            fixture.homeScore === null && fixture.awayScore === null && !fixtureHasStarted(fixture)
+            fixtureHasConfirmedTeams(fixture, teamByCountry) &&
+            fixture.homeScore === null &&
+            fixture.awayScore === null &&
+            !fixtureHasStarted(fixture)
         )
         .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
-    [fixtures]
+    [fixtures, teamByCountry]
   );
 
   const [open, setOpen] = useState(false);
