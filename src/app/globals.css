@@ -1440,6 +1440,31 @@ button {
   padding-top: 20px;
 }
 
+.assignment-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.assignment-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--gold);
+  font-weight: 850;
+}
+
+.assignment-editor-head span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.assignment-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(260px, 1fr);
+  gap: 12px;
+}
+
 .admin-invites {
   margin-top: 16px;
   padding: 18px;
@@ -1638,6 +1663,10 @@ button {
   .bet-slip-grid,
   .bet-slip-summary,
   .admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assignment-row {
     grid-template-columns: 1fr;
   }
 

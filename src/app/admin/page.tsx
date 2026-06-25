@@ -11,9 +11,17 @@ type InviteLink = {
   inviteUrl: string;
 };
 
-const DEFAULT_ASSIGNMENTS = WALPLUS_GROUP_ASSIGNMENTS.map(
-  (assignment) => `${assignment.name}: ${assignment.teams.join(", ")}`
-).join("\n");
+type AssignmentEditorRow = {
+  name: string;
+  teams: string;
+};
+
+const TOTAL_TEAMS = 48;
+
+const DEFAULT_ASSIGNMENT_ROWS: AssignmentEditorRow[] = WALPLUS_GROUP_ASSIGNMENTS.map((assignment) => ({
+  name: assignment.name,
+  teams: assignment.teams.join(", ")
+}));
 
 export default function AdminPage() {
   const [key, setKey] = useState("");
@@ -34,7 +42,8 @@ export default function AdminPage() {
   const [createChampionPrizeAmount, setCreateChampionPrizeAmount] = useState("240");
   const [createRunnerUpPrizeAmount, setCreateRunnerUpPrizeAmount] = useState("120");
   const [createWoodenSpoonPrizeAmount, setCreateWoodenSpoonPrizeAmount] = useState("40");
-  const [assignmentText, setAssignmentText] = useState(DEFAULT_ASSIGNMENTS);
+  const [memberCount, setMemberCount] = useState(DEFAULT_ASSIGNMENT_ROWS.length);
+  const [assignmentRows, setAssignmentRows] = useState(DEFAULT_ASSIGNMENT_ROWS);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [inviteLinks, setInviteLinks] = useState<InviteLink[]>([]);
   const [prizePoolAmount, setPrizePoolAmount] = useState("600");
@@ -46,6 +55,11 @@ export default function AdminPage() {
   const selected = useMemo(
     () => state?.teams.find((team) => team.country === country) ?? null,
     [country, state]
+  );
+  const maxMemberCount = Math.floor(TOTAL_TEAMS / teamsPerParticipant);
+  const visibleAssignmentRows = useMemo(
+    () => ensureAssignmentRowCount(assignmentRows, memberCount).slice(0, memberCount),
+    [assignmentRows, memberCount]
   );
 
   useEffect(() => {
@@ -72,6 +86,10 @@ export default function AdminPage() {
     setRunnerUpPrizeAmount(String(state.group.runnerUpPrizeAmount));
     setWoodenSpoonPrizeAmount(String(state.group.woodenSpoonPrizeAmount));
   }, [state?.group]);
+
+  useEffect(() => {
+    setMemberCount((current) => normalizeMemberCount(current, teamsPerParticipant));
+  }, [teamsPerParticipant]);
 
   async function unlock() {
     setUnlocking(true);
@@ -145,7 +163,7 @@ export default function AdminPage() {
   async function createGroup() {
     let participants;
     try {
-      participants = parseAssignments(assignmentText, teamsPerParticipant);
+      participants = buildAssignments(assignmentRows, memberCount, teamsPerParticipant);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not parse assignments");
       return;
@@ -181,6 +199,25 @@ export default function AdminPage() {
     setMessage(`Created ${payload.group.name}`);
     await loadGroups(payload.group.slug);
     await loadSelectedState(payload.group.slug);
+  }
+
+  function updateTeamsPerParticipant(value: number) {
+    setTeamsPerParticipant(value);
+    setMemberCount((current) => normalizeMemberCount(current, value));
+  }
+
+  function updateMemberCount(value: number) {
+    const nextCount = normalizeMemberCount(value, teamsPerParticipant);
+    setMemberCount(nextCount);
+    setAssignmentRows((rows) => ensureAssignmentRowCount(rows, nextCount));
+  }
+
+  function updateAssignmentRow(index: number, field: keyof AssignmentEditorRow, value: string) {
+    setAssignmentRows((rows) => {
+      const next = ensureAssignmentRowCount(rows, memberCount);
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
   }
 
   async function savePrizeSettings() {
@@ -305,11 +342,22 @@ export default function AdminPage() {
             Team format
             <select
               value={teamsPerParticipant}
-              onChange={(event) => setTeamsPerParticipant(Number(event.target.value))}
+              onChange={(event) => updateTeamsPerParticipant(Number(event.target.value))}
             >
               <option value={5}>5 teams per participant</option>
               <option value={4}>4 teams per participant</option>
             </select>
+          </label>
+          <label>
+            Member count
+            <input
+              value={memberCount}
+              onChange={(event) => updateMemberCount(Number(event.target.value))}
+              inputMode="numeric"
+              min={1}
+              max={maxMemberCount}
+              type="number"
+            />
           </label>
           <label>
             Total prize
@@ -327,10 +375,33 @@ export default function AdminPage() {
             Wooden spoon
             <input value={createWoodenSpoonPrizeAmount} onChange={(event) => setCreateWoodenSpoonPrizeAmount(event.target.value)} inputMode="decimal" />
           </label>
-          <label className="wide">
-            Assigned teams
-            <textarea value={assignmentText} onChange={(event) => setAssignmentText(event.target.value)} rows={10} />
-          </label>
+          <div className="wide assignment-editor">
+            <div className="assignment-editor-head">
+              <strong>Member aliases</strong>
+              <span>
+                {memberCount} players / {memberCount * teamsPerParticipant} teams
+              </span>
+            </div>
+            {visibleAssignmentRows.map((row, index) => (
+              <div className="assignment-row" key={index}>
+                <label>
+                  Alias {index + 1}
+                  <input
+                    value={row.name}
+                    onChange={(event) => updateAssignmentRow(index, "name", event.target.value)}
+                  />
+                </label>
+                <label>
+                  Assigned teams
+                  <input
+                    value={row.teams}
+                    onChange={(event) => updateAssignmentRow(index, "teams", event.target.value)}
+                    placeholder={`Team 1, Team 2, Team 3, Team 4${teamsPerParticipant === 5 ? ", Team 5" : ""}`}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
           <button className="primary-button" onClick={createGroup} disabled={creatingGroup} type="button">
             {creatingGroup ? "Creating..." : "Create / update group"}
           </button>
@@ -430,25 +501,37 @@ function buildPrizeSettings(values: {
   };
 }
 
-function parseAssignments(value: string, teamsPerParticipant: number) {
-  const rows = value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function normalizeMemberCount(value: number, teamsPerParticipant: number) {
+  const maxMemberCount = Math.floor(TOTAL_TEAMS / teamsPerParticipant);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(Math.max(Math.trunc(value), 1), maxMemberCount);
+}
 
-  if (!rows.length) throw new Error("Add at least one assignment line");
+function ensureAssignmentRowCount(rows: AssignmentEditorRow[], count: number) {
+  const next = rows.map((row) => ({ ...row }));
+  while (next.length < count) {
+    next.push({ name: `Member ${next.length + 1}`, teams: "" });
+  }
+  return next;
+}
 
-  return rows.map((line) => {
-    const [name, teamsText] = line.split(":");
-    if (!name || !teamsText) throw new Error(`Use "Name: Team, Team" format for: ${line}`);
-    const teams = teamsText
+function buildAssignments(rows: AssignmentEditorRow[], memberCount: number, teamsPerParticipant: number) {
+  const visibleRows = ensureAssignmentRowCount(rows, memberCount).slice(0, memberCount);
+  const seenNames = new Set<string>();
+
+  return visibleRows.map((row, index) => {
+    const name = row.name.trim();
+    if (!name) throw new Error(`Alias ${index + 1} is required`);
+    if (seenNames.has(name)) throw new Error(`Duplicate alias: ${name}`);
+    seenNames.add(name);
+
+    const teams = row.teams
       .split(",")
       .map((team) => team.trim())
       .filter(Boolean);
-    if (!teams.length) throw new Error(`${name.trim()} needs at least one team`);
     if (teams.length !== teamsPerParticipant) {
-      throw new Error(`${name.trim()} needs exactly ${teamsPerParticipant} assigned teams`);
+      throw new Error(`${name} needs exactly ${teamsPerParticipant} assigned teams`);
     }
-    return { name: name.trim(), teams };
+    return { name, teams };
   });
 }
