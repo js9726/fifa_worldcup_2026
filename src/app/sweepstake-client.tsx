@@ -138,8 +138,8 @@ const FLAG_CODES: Record<string, string> = {
 function statusFor(team: Team) {
   if (!team.finalRank) return "Active";
   if (team.finalRank === 1) return "Champion";
-  if (team.finalRank <= team.expectedRank) return "Above expectation";
-  return "Below expectation";
+  if (team.finalRank === 2) return "Runner-up";
+  return `Eliminated${team.eliminatedStage ? ` - ${team.eliminatedStage}` : ""}`;
 }
 
 function ratingLabel(winRate: number) {
@@ -1684,10 +1684,11 @@ function FlagBadge({ team }: { team: Team }) {
 
 function TeamTile({ team, compact = false }: { team: Team; compact?: boolean }) {
   const status = statusFor(team);
-  const below = status === "Below expectation";
+  const eliminated = Boolean(team.finalRank && team.finalRank > 2);
+  const beatExpectation = Boolean(team.finalRank && team.finalRank <= team.expectedRank);
 
   return (
-    <article className={clsx("team-tile", compact && "compact", below && "dimmed")}>
+    <article className={clsx("team-tile", compact && "compact", eliminated && "dimmed")}>
       <FlagBadge team={team} />
       <div className="team-main">
         <strong>{team.country}</strong>
@@ -1707,7 +1708,7 @@ function TeamTile({ team, compact = false }: { team: Team; compact?: boolean }) 
       </div>
       {team.finalRank && (
         <div className="expectation">
-          {below ? <Shield /> : <CheckCircle2 />}
+          {beatExpectation ? <CheckCircle2 /> : <Shield />}
           <span>vs exp #{team.expectedRank}</span>
         </div>
       )}
