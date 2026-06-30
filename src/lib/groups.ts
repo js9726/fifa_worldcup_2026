@@ -15,6 +15,10 @@ export type PoolAssignment = {
   teams: string[];
 };
 
+export type GroupParticipantInput = {
+  name: string;
+};
+
 export type CreatedInviteLink = {
   participantId: number;
   participantName: string;
@@ -27,6 +31,7 @@ type GroupRow = {
   slug: string;
   name: string;
   allow_draws: boolean;
+  teams_per_participant: number | null;
   prize_pool_amount: string | number;
   champion_prize_amount: string | number;
   runner_up_prize_amount: string | number;
@@ -51,6 +56,7 @@ export function ensureGroupSchema(sql: SqlClient = getSql()) {
         slug text not null unique,
         name text not null,
         allow_draws boolean not null default true,
+        teams_per_participant integer,
         prize_pool_amount numeric(10,2) not null default 600,
         champion_prize_amount numeric(10,2) not null default 360,
         runner_up_prize_amount numeric(10,2) not null default 180,
@@ -61,6 +67,7 @@ export function ensureGroupSchema(sql: SqlClient = getSql()) {
     await sql`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
     await sql`
       alter table sweepstake_groups
+        add column if not exists teams_per_participant integer,
         add column if not exists prize_pool_amount numeric(10,2) not null default 600,
         add column if not exists champion_prize_amount numeric(10,2) not null default 360,
         add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,
@@ -119,6 +126,7 @@ export function mapGroup(row: GroupRow): SweepstakeGroup {
     slug: row.slug,
     name: row.name,
     allowDraws: row.allow_draws,
+    teamsPerParticipant: row.teams_per_participant == null ? null : Number(row.teams_per_participant),
     prizePoolAmount: toNumber(row.prize_pool_amount),
     championPrizeAmount: toNumber(row.champion_prize_amount),
     runnerUpPrizeAmount: toNumber(row.runner_up_prize_amount),
@@ -172,6 +180,7 @@ export async function listSweepstakeGroups(sql: SqlClient = getSql()): Promise<S
       g.slug,
       g.name,
       g.allow_draws,
+      g.teams_per_participant,
       g.prize_pool_amount,
       g.champion_prize_amount,
       g.runner_up_prize_amount,
@@ -253,22 +262,23 @@ export async function createGroupFromAssignments({
   return sql.begin(async (tx) => {
     const [groupRow] = await tx<GroupRow[]>`
       insert into sweepstake_groups (
-        slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
         runner_up_prize_amount, wooden_spoon_prize_amount
       )
       values (
-        ${groupSlug}, ${cleanName}, ${allowDraws}, ${prizes.prizePoolAmount},
+        ${groupSlug}, ${cleanName}, ${allowDraws}, ${teamsPerParticipant}, ${prizes.prizePoolAmount},
         ${prizes.championPrizeAmount}, ${prizes.runnerUpPrizeAmount}, ${prizes.woodenSpoonPrizeAmount}
       )
       on conflict (slug) do update set
         name = excluded.name,
         allow_draws = excluded.allow_draws,
+        teams_per_participant = excluded.teams_per_participant,
         prize_pool_amount = excluded.prize_pool_amount,
         champion_prize_amount = excluded.champion_prize_amount,
         runner_up_prize_amount = excluded.runner_up_prize_amount,
         wooden_spoon_prize_amount = excluded.wooden_spoon_prize_amount
       returning
-        id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        id, slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
         runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
     `;
 
@@ -303,6 +313,91 @@ export async function createGroupFromAssignments({
   });
 }
 
+export async function createGroupForDraw({
+  sql = getSql(),
+  name,
+  slug,
+  participants,
+  appUrl,
+  teamsPerParticipant,
+  prizeSettings = defaultPrizeSettings()
+}: {
+  sql?: SqlClient;
+  name: string;
+  slug?: string | null;
+  participants: GroupParticipantInput[];
+  appUrl: string;
+  teamsPerParticipant?: number | null;
+  prizeSettings?: PrizeSettingsInput;
+}): Promise<{ group: SweepstakeGroup; inviteLinks: CreatedInviteLink[] }> {
+  await ensureGroupSchema(sql);
+
+  const cleanName = cleanDisplayName(name);
+  if (!cleanName) throw new Error("Group name is required");
+
+  const groupSlug = slugifyGroupName(slug || cleanName);
+  if (!groupSlug) throw new Error("Group slug is required");
+
+  const drawQuota = validateTeamsPerParticipant(teamsPerParticipant, true);
+  const prizes = validatePrizeSettings(prizeSettings);
+  const preparedParticipants = prepareParticipants(participants);
+  const requiredTeamCount = preparedParticipants.length * drawQuota;
+  const [{ active_count: activeTeamCount }] = await sql<Array<{ active_count: number }>>`
+    select count(*)::int as active_count
+    from teams
+    where final_rank is null
+  `;
+
+  if (activeTeamCount < requiredTeamCount) {
+    throw new Error(
+      `Only ${activeTeamCount} active countries left; ${preparedParticipants.length} players need ${requiredTeamCount} teams`
+    );
+  }
+
+  return sql.begin(async (tx) => {
+    const [groupRow] = await tx<GroupRow[]>`
+      insert into sweepstake_groups (
+        slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
+        runner_up_prize_amount, wooden_spoon_prize_amount
+      )
+      values (
+        ${groupSlug}, ${cleanName}, true, ${drawQuota}, ${prizes.prizePoolAmount},
+        ${prizes.championPrizeAmount}, ${prizes.runnerUpPrizeAmount}, ${prizes.woodenSpoonPrizeAmount}
+      )
+      on conflict (slug) do update set
+        name = excluded.name,
+        allow_draws = excluded.allow_draws,
+        teams_per_participant = excluded.teams_per_participant,
+        prize_pool_amount = excluded.prize_pool_amount,
+        champion_prize_amount = excluded.champion_prize_amount,
+        runner_up_prize_amount = excluded.runner_up_prize_amount,
+        wooden_spoon_prize_amount = excluded.wooden_spoon_prize_amount
+      returning
+        id, slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
+        runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
+    `;
+
+    const inviteLinks: CreatedInviteLink[] = [];
+    for (const entry of preparedParticipants) {
+      const [participant] = await tx<Array<{ id: number; name: string; invite_token: string }>>`
+        insert into participants (pool_id, name, invite_token)
+        values (${groupRow.id}, ${entry.name}, ${tokenFor()})
+        on conflict (pool_id, name) do update set name = excluded.name
+        returning id, name, invite_token
+      `;
+
+      inviteLinks.push({
+        participantId: participant.id,
+        participantName: participant.name,
+        inviteToken: participant.invite_token,
+        inviteUrl: `${appUrl.replace(/\/+$/, "")}/invite/${participant.invite_token}`
+      });
+    }
+
+    return { group: mapGroup(groupRow), inviteLinks };
+  });
+}
+
 export async function updateGroupPrizeSettings({
   sql = getSql(),
   slug,
@@ -323,7 +418,7 @@ export async function updateGroupPrizeSettings({
       wooden_spoon_prize_amount = ${prizes.woodenSpoonPrizeAmount}
     where slug = ${slug}
     returning
-      id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+      id, slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
       runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
   `;
   if (!row) throw new Error("Group not found");
@@ -349,28 +444,51 @@ export function walplusPrizeSettings(): PrizeSettingsInput {
 }
 
 function prepareAssignments(assignments: PoolAssignment[], teamsPerParticipant: number | null) {
-  if (!Array.isArray(assignments) || assignments.length === 0) {
+  const expectedTeamsPerParticipant = validateTeamsPerParticipant(teamsPerParticipant, false);
+  const preparedParticipants = prepareParticipants(assignments);
+
+  return preparedParticipants.map((participant, index) => {
+    const assignment = assignments[index];
+    const teams = (assignment.teams ?? []).map(cleanDisplayName).filter(Boolean);
+    if (!teams.length) throw new Error(`${participant.name} needs at least one team`);
+    if (expectedTeamsPerParticipant !== null && teams.length !== expectedTeamsPerParticipant) {
+      throw new Error(`${participant.name} needs exactly ${expectedTeamsPerParticipant} assigned teams`);
+    }
+
+    return { name: participant.name, teams };
+  });
+}
+
+function prepareParticipants(participants: GroupParticipantInput[]) {
+  if (!Array.isArray(participants) || participants.length === 0) {
     throw new Error("At least one participant is required");
-  }
-  if (teamsPerParticipant !== null && teamsPerParticipant !== 4 && teamsPerParticipant !== 5) {
-    throw new Error("Team format must be 4 or 5 teams per participant");
   }
 
   const seenNames = new Set<string>();
-  return assignments.map((assignment) => {
-    const name = cleanDisplayName(assignment.name);
+  return participants.map((participant) => {
+    const name = cleanDisplayName(participant.name);
     if (!name) throw new Error("Every participant needs a name");
     if (seenNames.has(name)) throw new Error(`Duplicate participant: ${name}`);
     seenNames.add(name);
 
-    const teams = (assignment.teams ?? []).map(cleanDisplayName).filter(Boolean);
-    if (!teams.length) throw new Error(`${name} needs at least one team`);
-    if (teamsPerParticipant !== null && teams.length !== teamsPerParticipant) {
-      throw new Error(`${name} needs exactly ${teamsPerParticipant} assigned teams`);
-    }
-
-    return { name, teams };
+    return { name };
   });
+}
+
+function validateTeamsPerParticipant(value: number | null | undefined, required: true): number;
+function validateTeamsPerParticipant(value: number | null | undefined, required: false): number | null;
+function validateTeamsPerParticipant(value: number | null | undefined, required: boolean) {
+  if (value === null || value === undefined) {
+    if (required) throw new Error("Team format is required");
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || ![3, 4, 5].includes(parsed)) {
+    throw new Error("Team format must be 3, 4 or 5 teams per participant");
+  }
+
+  return parsed;
 }
 
 function validatePrizeSettings(input: PrizeSettingsInput) {

@@ -412,6 +412,11 @@ button {
   gap: 16px;
 }
 
+.draw-card--action {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--panel) 82%, var(--gold) 18%);
+}
+
 .draw-card.gold {
   border-color: rgba(245, 196, 81, 0.5);
 }
@@ -1428,6 +1433,11 @@ button {
   grid-column: 1 / -1;
 }
 
+.admin-grid-action {
+  align-self: end;
+  min-height: 50px;
+}
+
 .admin-grid--import {
   border-top: 1px solid var(--line);
   margin-top: 20px;
@@ -1459,10 +1469,18 @@ button {
   font-size: 0.92rem;
 }
 
+.admin-form-note {
+  margin: -2px 0 4px;
+}
+
 .assignment-row {
   display: grid;
   grid-template-columns: minmax(160px, 0.35fr) minmax(260px, 1fr);
   gap: 12px;
+}
+
+.assignment-row--aliases {
+  grid-template-columns: minmax(160px, 440px);
 }
 
 .admin-invites {

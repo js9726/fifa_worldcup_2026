@@ -313,6 +313,7 @@ export const demoState: AppState = {
     slug: "demo",
     name: "Demo Pool",
     allowDraws: false,
+    teamsPerParticipant: 4,
     prizePoolAmount: 600,
     championPrizeAmount: 360,
     runnerUpPrizeAmount: 180,

@@ -2,8 +2,9 @@ name: Sync World Cup Results
 
 on:
   schedule:
-    # Near-real-time polling. Avoid :00 because scheduled workflows are often delayed there.
-    - cron: "7,22,37,52 * * * *"
+    # High-frequency tournament polling. GitHub can delay or drop scheduled ticks,
+    # so run every 5 minutes to improve the chance of a prompt post-match sync.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 concurrency:

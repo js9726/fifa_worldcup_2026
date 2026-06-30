@@ -464,6 +464,7 @@ export default function SweepstakeClient({
   const [state, setState] = useState<AppState | null>(initialState ?? null);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [drawingPot, setDrawingPot] = useState<number | null>(null);
+  const [drawingTeam, setDrawingTeam] = useState(false);
   const [message, setMessage] = useState("");
   const [theme, setTheme] = useState<Theme>("daylight");
 
@@ -549,6 +550,35 @@ export default function SweepstakeClient({
     await loadState();
   }
 
+  async function drawActiveTeam() {
+    if (state?.group?.allowDraws === false) {
+      setMessage("This group already has assigned teams. Draws are locked.");
+      return;
+    }
+    if (demoMode) {
+      setMessage("Demo mode is pre-filled. Use a private invite link for the real live draw.");
+      return;
+    }
+
+    setDrawingTeam(true);
+    setMessage("Drawing active country...");
+    const response = await fetch("/api/draw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token })
+    });
+    const payload = await response.json();
+    setDrawingTeam(false);
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Draw failed");
+      return;
+    }
+
+    setMessage(`${payload.draw.team.country} is yours.`);
+    await loadState();
+  }
+
   const groupedDraws = useMemo(() => {
     const rows = new Map<string, Draw[]>();
     for (const participant of state?.participants ?? []) rows.set(participant.name, []);
@@ -576,8 +606,14 @@ export default function SweepstakeClient({
   const tournamentStats = useMemo(() => (state ? getTournamentStats(state) : null), [state]);
   const canShowDrawTab = !adminOverview;
   const isAssignedGroup = state?.group?.allowDraws === false;
+  const groupDrawQuota = state?.group?.teamsPerParticipant ?? null;
+  const usesActiveTeamDraw = !isAssignedGroup && groupDrawQuota !== null;
   const drawTabLabel = isAssignedGroup ? "My Teams" : "Draw";
-  const drawPageTitle = isAssignedGroup ? `${state?.participant?.name}'s teams` : `${state?.participant?.name}'s live draw`;
+  const drawPageTitle = isAssignedGroup
+    ? `${state?.participant?.name}'s teams`
+    : usesActiveTeamDraw
+      ? `${state?.participant?.name}'s team draw`
+      : `${state?.participant?.name}'s live draw`;
 
   useEffect(() => {
     if (state && tab === "draw" && !canShowDrawTab) setTab("pools");
@@ -595,6 +631,12 @@ export default function SweepstakeClient({
   }
 
   const drawnPotIds = new Set(state.myDraws.map((draw) => draw.team.potId));
+  const groupDrawnTeamIds = new Set(state.allDraws.map((draw) => draw.team.id));
+  const activeTeamCount = state.teams.filter((team) => team.finalRank === null).length;
+  const activeAvailableCount = state.teams.filter(
+    (team) => team.finalRank === null && !groupDrawnTeamIds.has(team.id)
+  ).length;
+  const drawQuotaRemaining = groupDrawQuota === null ? 0 : Math.max(0, groupDrawQuota - state.myDraws.length);
 
   return (
     <main className="shell">
@@ -707,6 +749,8 @@ export default function SweepstakeClient({
                   ? "This preview uses sample draws and results only. It does not reserve any country."
                   : isAssignedGroup
                     ? `This ${state.myDraws.length}-team group was imported from assigned teams. Draws are locked for every invite link.`
+                    : usesActiveTeamDraw
+                      ? `Each player draws ${groupDrawQuota} active teams. Eliminated countries are excluded, and ${activeAvailableCount}/${activeTeamCount} active countries are still available.`
                     : `This group has ${state.teams.length} countries for ${state.participants.length} participants. Neon locks every country once within this group.`}
               </p>
             </div>
@@ -724,6 +768,40 @@ export default function SweepstakeClient({
                     </article>
                   );
                 })}
+              </div>
+            ) : usesActiveTeamDraw ? (
+              <div className="assigned-team-grid">
+                {state.myDraws.map((draw) => {
+                  const pot = state.pots.find((row) => row.id === draw.team.potId);
+                  return (
+                    <article className={clsx("draw-card", "assigned-card", pot?.colour)} key={draw.team.id}>
+                      <div>
+                        <p className="eyebrow">{draw.team.potName}</p>
+                        <h2>{draw.team.potLabel}</h2>
+                      </div>
+                      <TeamTile team={draw.team} compact />
+                    </article>
+                  );
+                })}
+                {drawQuotaRemaining > 0 && (
+                  <article className="draw-card draw-card--action">
+                    <div>
+                      <p className="eyebrow">Active draw</p>
+                      <h2>{drawQuotaRemaining} to go</h2>
+                      <p className="muted">
+                        {activeAvailableCount}/{activeTeamCount} active countries left
+                      </p>
+                    </div>
+                    <button
+                      className="primary-button"
+                      onClick={drawActiveTeam}
+                      disabled={drawingTeam || activeAvailableCount === 0}
+                    >
+                      {drawingTeam ? <RefreshCw className="spin" /> : <Sparkles />}
+                      <span>Draw team</span>
+                    </button>
+                  </article>
+                )}
               </div>
             ) : (
               state.pots.map((pot) => {

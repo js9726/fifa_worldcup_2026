@@ -82,6 +82,7 @@ type StateGroupRow = {
   slug: string;
   name: string;
   allow_draws: boolean;
+  teams_per_participant: number | null;
   prize_pool_amount: string | number;
   champion_prize_amount: string | number;
   runner_up_prize_amount: string | number;
@@ -406,6 +407,7 @@ async function resolveStateContext(
           slug: string;
           group_name: string;
           allow_draws: boolean;
+          teams_per_participant: number | null;
           prize_pool_amount: string | number;
           champion_prize_amount: string | number;
           runner_up_prize_amount: string | number;
@@ -421,6 +423,7 @@ async function resolveStateContext(
         g.slug,
         g.name as group_name,
         g.allow_draws,
+        g.teams_per_participant,
         g.prize_pool_amount,
         g.champion_prize_amount,
         g.runner_up_prize_amount,
@@ -439,6 +442,7 @@ async function resolveStateContext(
         slug: row.slug,
         name: row.group_name,
         allow_draws: row.allow_draws,
+        teams_per_participant: row.teams_per_participant,
         prize_pool_amount: row.prize_pool_amount,
         champion_prize_amount: row.champion_prize_amount,
         runner_up_prize_amount: row.runner_up_prize_amount,
@@ -452,7 +456,7 @@ async function resolveStateContext(
   if (groupSlug) {
     const [row] = await sql<StateGroupRow[]>`
       select
-        id, slug, name, allow_draws, prize_pool_amount, champion_prize_amount,
+        id, slug, name, allow_draws, teams_per_participant, prize_pool_amount, champion_prize_amount,
         runner_up_prize_amount, wooden_spoon_prize_amount, created_at::text as created_at
       from sweepstake_groups
       where slug = ${groupSlug}

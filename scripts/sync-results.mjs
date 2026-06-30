@@ -69,6 +69,20 @@ function resolveCountry(rawName) {
   return null;
 }
 
+function resolveMatchWinner(match) {
+  if (match.score?.winner === "HOME_TEAM") return "HOME";
+  if (match.score?.winner === "AWAY_TEAM") return "AWAY";
+
+  const homeScore = match.score?.fullTime?.home;
+  const awayScore = match.score?.fullTime?.away;
+  if (typeof homeScore === "number" && typeof awayScore === "number" && homeScore !== awayScore) {
+    return homeScore > awayScore ? "HOME" : "AWAY";
+  }
+
+  if (match.score?.winner === "DRAW") return "DRAW";
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Stage labels and ranking bands.
 // ---------------------------------------------------------------------------
@@ -233,6 +247,10 @@ function runSelfTest() {
   for (const [apiName, dbName] of Object.entries(aliasChecks)) {
     expect(`"${apiName}" -> "${dbName}"`, resolveCountry(apiName) === dbName);
   }
+  expect(
+    "unequal full-time score supplies knockout winner when provider winner is draw/missing",
+    resolveMatchWinner({ score: { winner: "DRAW", fullTime: { home: 4, away: 5 } } }) === "AWAY"
+  );
 
   // --- Bet settlement maths -------------------------------------------------
   expect("AH adjusted +0.5 -> win", ahOutcome(0.5) === "win");
@@ -337,14 +355,7 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
   // full-time score when the match never went past regulation.
   ninetyHome: m.score?.regularTime?.home ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.home ?? null : null),
   ninetyAway: m.score?.regularTime?.away ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.away ?? null : null),
-  winner:
-    m.score?.winner === "HOME_TEAM"
-      ? "HOME"
-      : m.score?.winner === "AWAY_TEAM"
-        ? "AWAY"
-        : m.score?.winner === "DRAW"
-          ? "DRAW"
-          : null
+  winner: resolveMatchWinner(m)
 }));
 
 const statusCounts = matches.reduce((acc, match) => {
@@ -619,6 +630,7 @@ async function ensureGroupSchemaExist(tx) {
       slug text not null unique,
       name text not null,
       allow_draws boolean not null default true,
+      teams_per_participant integer,
       prize_pool_amount numeric(10,2) not null default 600,
       champion_prize_amount numeric(10,2) not null default 360,
       runner_up_prize_amount numeric(10,2) not null default 180,
@@ -629,6 +641,7 @@ async function ensureGroupSchemaExist(tx) {
   await tx`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
   await tx`
     alter table sweepstake_groups
+      add column if not exists teams_per_participant integer,
       add column if not exists prize_pool_amount numeric(10,2) not null default 600,
       add column if not exists champion_prize_amount numeric(10,2) not null default 360,
       add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,

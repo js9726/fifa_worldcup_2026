@@ -8,15 +8,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type TeamRow = Parameters<typeof mapTeam>[0];
+type ParticipantDrawRow = {
+  id: number;
+  name: string;
+  pool_id: number;
+  allow_draws: boolean;
+  teams_per_participant: number | null;
+};
 
 export async function POST(request: NextRequest) {
   const { token, potId } = (await request.json()) as { token?: string; potId?: number };
 
-  if (!token || !Number.isInteger(potId)) {
-    return NextResponse.json({ error: "Invite token and potId are required" }, { status: 400 });
+  if (!token) {
+    return NextResponse.json({ error: "Invite token is required" }, { status: 400 });
   }
 
-  const requestedPotId = Number(potId);
   const sql = getSql();
 
   try {
@@ -25,12 +31,13 @@ export async function POST(request: NextRequest) {
 
     const draw = await sql.begin(async (tx) => {
       const participantRows = (await tx`
-        select p.id, p.name, p.pool_id, g.allow_draws
+        select p.id, p.name, p.pool_id, g.allow_draws, g.teams_per_participant
         from participants p
         join sweepstake_groups g on g.id = p.pool_id
         where p.invite_token = ${token}
         limit 1
-      `) as Array<{ id: number; name: string; pool_id: number; allow_draws: boolean }>;
+        for update of p
+      `) as ParticipantDrawRow[];
       const [participant] = participantRows;
 
       if (!participant) {
@@ -40,6 +47,69 @@ export async function POST(request: NextRequest) {
         throw new Response("This group already has assigned teams. Draws are locked.", { status: 409 });
       }
 
+      if (participant.teams_per_participant !== null) {
+        const quota = Number(participant.teams_per_participant);
+        const existingRows = (await tx`
+          select
+            t.*,
+            p.name as pot_name,
+            p.label as pot_label,
+            d.drawn_at::text as drawn_at
+          from draws d
+          join teams t on t.id = d.team_id
+          join pots p on p.id = t.pot_id
+          where d.participant_id = ${participant.id}
+            and d.pool_id = ${participant.pool_id}
+          order by d.drawn_at, d.id
+        `) as Array<TeamRow & { drawn_at: string }>;
+
+        if (existingRows.length >= quota) {
+          throw new Response(`You already have ${quota} teams.`, { status: 409 });
+        }
+
+        const teamRows = (await tx`
+          select
+            t.*,
+            p.name as pot_name,
+            p.label as pot_label
+          from teams t
+          join pots p on p.id = t.pot_id
+          where t.final_rank is null
+            and not exists (
+              select 1
+              from draws d
+              where d.team_id = t.id
+                and d.pool_id = ${participant.pool_id}
+            )
+          order by random()
+          limit 1
+          for update of t skip locked
+        `) as TeamRow[];
+        const [team] = teamRows;
+
+        if (!team) {
+          throw new Response("No active countries left in this pool.", { status: 409 });
+        }
+
+        const insertedRows = (await tx`
+          insert into draws (pool_id, participant_id, team_id, pot_id)
+          values (${participant.pool_id}, ${participant.id}, ${team.id}, ${team.pot_id})
+          returning drawn_at::text
+        `) as Array<{ drawn_at: string }>;
+        const [inserted] = insertedRows;
+
+        return {
+          participantName: participant.name,
+          participantId: participant.id,
+          team: mapTeam(team),
+          drawnAt: inserted.drawn_at
+        } satisfies Draw;
+      }
+
+      if (!Number.isInteger(potId)) {
+        throw new Response("Invite token and potId are required", { status: 400 });
+      }
+      const requestedPotId = Number(potId);
       const existingRows = (await tx`
         select
           t.*,

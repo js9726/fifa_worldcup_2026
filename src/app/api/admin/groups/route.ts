@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql, requireAdminKey } from "@/lib/db";
 import {
+  createGroupForDraw,
   createGroupFromAssignments,
   listSweepstakeGroups,
   updateGroupPrizeSettings,
-  type PoolAssignment,
   type PrizeSettingsInput
 } from "@/lib/groups";
 import { ensureBettingTables } from "@/lib/state";
@@ -14,10 +14,11 @@ export const dynamic = "force-dynamic";
 
 type CreateGroupBody = {
   key?: string;
+  mode?: "assign" | "draw";
   name?: string;
   slug?: string | null;
   teamsPerParticipant?: number | null;
-  participants?: PoolAssignment[];
+  participants?: Array<{ name?: string; teams?: string[] }>;
   prizeSettings?: PrizeSettingsInput;
 };
 
@@ -54,16 +55,32 @@ export async function POST(request: NextRequest) {
   try {
     const sql = getSql();
     await ensureBettingTables(sql);
-    const result = await createGroupFromAssignments({
-      sql,
-      name: body.name ?? "",
-      slug: body.slug ?? null,
-      assignments: body.participants ?? [],
-      appUrl,
-      allowDraws: false,
-      teamsPerParticipant: body.teamsPerParticipant ?? null,
-      prizeSettings: body.prizeSettings
-    });
+    const result =
+      body.mode === "draw"
+        ? await createGroupForDraw({
+            sql,
+            name: body.name ?? "",
+            slug: body.slug ?? null,
+            participants: (body.participants ?? []).map((participant) => ({
+              name: participant.name ?? ""
+            })),
+            appUrl,
+            teamsPerParticipant: body.teamsPerParticipant ?? null,
+            prizeSettings: body.prizeSettings
+          })
+        : await createGroupFromAssignments({
+            sql,
+            name: body.name ?? "",
+            slug: body.slug ?? null,
+            assignments: (body.participants ?? []).map((participant) => ({
+              name: participant.name ?? "",
+              teams: participant.teams ?? []
+            })),
+            appUrl,
+            allowDraws: false,
+            teamsPerParticipant: body.teamsPerParticipant ?? null,
+            prizeSettings: body.prizeSettings
+          });
 
     return NextResponse.json(result);
   } catch (error) {

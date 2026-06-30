@@ -124,6 +124,7 @@ async function ensureGroupSchema(db) {
       slug text not null unique,
       name text not null,
       allow_draws boolean not null default true,
+      teams_per_participant integer,
       prize_pool_amount numeric(10,2) not null default 600,
       champion_prize_amount numeric(10,2) not null default 360,
       runner_up_prize_amount numeric(10,2) not null default 180,
@@ -134,6 +135,7 @@ async function ensureGroupSchema(db) {
   await db`alter table sweepstake_groups add column if not exists allow_draws boolean not null default true`;
   await db`
     alter table sweepstake_groups
+      add column if not exists teams_per_participant integer,
       add column if not exists prize_pool_amount numeric(10,2) not null default 600,
       add column if not exists champion_prize_amount numeric(10,2) not null default 360,
       add column if not exists runner_up_prize_amount numeric(10,2) not null default 180,

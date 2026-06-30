@@ -17,6 +17,7 @@ type AssignmentEditorRow = {
 };
 
 const TOTAL_TEAMS = 48;
+const TEAM_FORMAT_OPTIONS = [5, 4, 3];
 
 const DEFAULT_ASSIGNMENT_ROWS: AssignmentEditorRow[] = WALPLUS_GROUP_ASSIGNMENTS.map((assignment) => ({
   name: assignment.name,
@@ -27,16 +28,14 @@ export default function AdminPage() {
   const [key, setKey] = useState("");
   const [unlocked, setUnlocked] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
+  const [refreshingGroups, setRefreshingGroups] = useState(false);
   const [groups, setGroups] = useState<SweepstakeGroupSummary[]>([]);
   const [selectedGroupSlug, setSelectedGroupSlug] = useState("");
   const [state, setState] = useState<AppState | null>(null);
-  const [country, setCountry] = useState("");
-  const [finalRank, setFinalRank] = useState("");
-  const [stage, setStage] = useState("");
-  const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [groupName, setGroupName] = useState(WALPLUS_GROUP_NAME);
   const [groupSlug, setGroupSlug] = useState(WALPLUS_GROUP_SLUG);
+  const [groupCreateMode, setGroupCreateMode] = useState<"assign" | "draw">("assign");
   const [teamsPerParticipant, setTeamsPerParticipant] = useState(5);
   const [createPrizePoolAmount, setCreatePrizePoolAmount] = useState("400");
   const [createChampionPrizeAmount, setCreateChampionPrizeAmount] = useState("240");
@@ -52,22 +51,18 @@ export default function AdminPage() {
   const [woodenSpoonPrizeAmount, setWoodenSpoonPrizeAmount] = useState("60");
   const [savingPrizeSettings, setSavingPrizeSettings] = useState(false);
 
-  const selected = useMemo(
-    () => state?.teams.find((team) => team.country === country) ?? null,
-    [country, state]
+  const activeTeamCount = useMemo(
+    () => state?.teams.filter((team) => team.finalRank === null).length ?? TOTAL_TEAMS,
+    [state]
   );
-  const maxMemberCount = Math.floor(TOTAL_TEAMS / teamsPerParticipant);
+  const teamLimit = groupCreateMode === "draw" ? activeTeamCount : TOTAL_TEAMS;
+  const maxMemberCount = Math.max(1, Math.floor(teamLimit / teamsPerParticipant));
+  const drawTeamRequirement = memberCount * teamsPerParticipant;
+  const drawHasEnoughTeams = groupCreateMode !== "draw" || drawTeamRequirement <= activeTeamCount;
   const visibleAssignmentRows = useMemo(
     () => ensureAssignmentRowCount(assignmentRows, memberCount).slice(0, memberCount),
     [assignmentRows, memberCount]
   );
-
-  useEffect(() => {
-    if (!selected) return;
-    setFinalRank(selected.finalRank?.toString() ?? "");
-    setStage(selected.eliminatedStage ?? "");
-    setNote(selected.resultNote ?? "");
-  }, [selected]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -88,8 +83,8 @@ export default function AdminPage() {
   }, [state?.group]);
 
   useEffect(() => {
-    setMemberCount((current) => normalizeMemberCount(current, teamsPerParticipant));
-  }, [teamsPerParticipant]);
+    setMemberCount((current) => normalizeMemberCount(current, teamsPerParticipant, teamLimit));
+  }, [teamsPerParticipant, teamLimit]);
 
   async function unlock() {
     setUnlocking(true);
@@ -111,19 +106,24 @@ export default function AdminPage() {
   }
 
   async function loadGroups(preferredSlug = selectedGroupSlug) {
-    const response = await fetch("/api/admin/groups", {
-      cache: "no-store",
-      headers: { "x-admin-key": key }
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      setMessage(payload.error ?? "Unable to load groups");
-      return;
-    }
+    setRefreshingGroups(true);
+    try {
+      const response = await fetch("/api/admin/groups", {
+        cache: "no-store",
+        headers: { "x-admin-key": key }
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setMessage(payload.error ?? "Unable to load groups");
+        return;
+      }
 
-    setGroups(payload.groups ?? []);
-    const nextSlug = preferredSlug || payload.groups?.[0]?.slug || "";
-    if (nextSlug) setSelectedGroupSlug(nextSlug);
+      setGroups(payload.groups ?? []);
+      const nextSlug = preferredSlug || payload.groups?.[0]?.slug || "";
+      if (nextSlug) setSelectedGroupSlug(nextSlug);
+    } finally {
+      setRefreshingGroups(false);
+    }
   }
 
   async function loadSelectedState(slug: string) {
@@ -139,42 +139,30 @@ export default function AdminPage() {
     setState(payload);
   }
 
-  async function saveResult() {
-    setMessage("Saving...");
-    const response = await fetch("/api/admin/result", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        key,
-        country,
-        finalRank: finalRank ? Number(finalRank) : null,
-        eliminatedStage: stage,
-        resultNote: note
-      })
-    });
-
-    setMessage(response.ok ? "Saved" : "Save failed");
-
-    if (response.ok && selectedGroupSlug) {
-      await loadSelectedState(selectedGroupSlug);
-    }
-  }
-
   async function createGroup() {
     let participants;
     try {
-      participants = buildAssignments(assignmentRows, memberCount, teamsPerParticipant);
+      participants =
+        groupCreateMode === "draw"
+          ? buildDrawParticipants(assignmentRows, memberCount)
+          : buildAssignments(assignmentRows, memberCount, teamsPerParticipant);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not parse assignments");
       return;
     }
 
+    if (!drawHasEnoughTeams) {
+      setMessage(`Only ${activeTeamCount} active countries left; this draw needs ${drawTeamRequirement}`);
+      return;
+    }
+
     setCreatingGroup(true);
-    setMessage("Creating group...");
+    setMessage(groupCreateMode === "draw" ? "Creating draw group..." : "Creating group...");
     const response = await fetch("/api/admin/groups", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-key": key },
       body: JSON.stringify({
+        mode: groupCreateMode,
         name: groupName,
         slug: groupSlug,
         teamsPerParticipant,
@@ -203,11 +191,11 @@ export default function AdminPage() {
 
   function updateTeamsPerParticipant(value: number) {
     setTeamsPerParticipant(value);
-    setMemberCount((current) => normalizeMemberCount(current, value));
+    setMemberCount((current) => normalizeMemberCount(current, value, teamLimit));
   }
 
   function updateMemberCount(value: number) {
-    const nextCount = normalizeMemberCount(value, teamsPerParticipant);
+    const nextCount = normalizeMemberCount(value, teamsPerParticipant, teamLimit);
     setMemberCount(nextCount);
     setAssignmentRows((rows) => ensureAssignmentRowCount(rows, nextCount));
   }
@@ -302,8 +290,13 @@ export default function AdminPage() {
               ))}
             </select>
           </label>
-          <button className="primary-button" onClick={() => loadGroups()} type="button">
-            Refresh groups
+          <button
+            className="primary-button admin-grid-action"
+            onClick={() => void loadGroups()}
+            disabled={refreshingGroups}
+            type="button"
+          >
+            {refreshingGroups ? "Refreshing..." : "Refresh groups"}
           </button>
         </div>
 
@@ -339,13 +332,23 @@ export default function AdminPage() {
             <input value={groupSlug} onChange={(event) => setGroupSlug(event.target.value)} />
           </label>
           <label>
+            Setup mode
+            <select value={groupCreateMode} onChange={(event) => setGroupCreateMode(event.target.value as "assign" | "draw")}>
+              <option value="assign">Assign teams now</option>
+              <option value="draw">Invite players to draw</option>
+            </select>
+          </label>
+          <label>
             Team format
             <select
               value={teamsPerParticipant}
               onChange={(event) => updateTeamsPerParticipant(Number(event.target.value))}
             >
-              <option value={5}>5 teams per participant</option>
-              <option value={4}>4 teams per participant</option>
+              {TEAM_FORMAT_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option} teams per participant
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -380,10 +383,16 @@ export default function AdminPage() {
               <strong>Member aliases</strong>
               <span>
                 {memberCount} players / {memberCount * teamsPerParticipant} teams
+                {groupCreateMode === "draw" ? ` from ${activeTeamCount} active countries` : ""}
               </span>
             </div>
+            {groupCreateMode === "draw" && (
+              <p className="muted admin-form-note">
+                Invite links will let each player draw {teamsPerParticipant} active teams. Eliminated countries are excluded.
+              </p>
+            )}
             {visibleAssignmentRows.map((row, index) => (
-              <div className="assignment-row" key={index}>
+              <div className={groupCreateMode === "draw" ? "assignment-row assignment-row--aliases" : "assignment-row"} key={index}>
                 <label>
                   Alias {index + 1}
                   <input
@@ -391,21 +400,27 @@ export default function AdminPage() {
                     onChange={(event) => updateAssignmentRow(index, "name", event.target.value)}
                   />
                 </label>
-                <label>
-                  Assigned teams
-                  <input
-                    value={row.teams}
-                    onChange={(event) => updateAssignmentRow(index, "teams", event.target.value)}
-                    placeholder={`Team 1, Team 2, Team 3, Team 4${teamsPerParticipant === 5 ? ", Team 5" : ""}`}
-                  />
-                </label>
+                {groupCreateMode === "assign" && (
+                  <label>
+                    Assigned teams
+                    <input
+                      value={row.teams}
+                      onChange={(event) => updateAssignmentRow(index, "teams", event.target.value)}
+                      placeholder={teamPlaceholder(teamsPerParticipant)}
+                    />
+                  </label>
+                )}
               </div>
             ))}
           </div>
-          <button className="primary-button" onClick={createGroup} disabled={creatingGroup} type="button">
-            {creatingGroup ? "Creating..." : "Create / update group"}
+          <button className="primary-button" onClick={createGroup} disabled={creatingGroup || !drawHasEnoughTeams} type="button">
+            {creatingGroup ? "Creating..." : groupCreateMode === "draw" ? "Create draw group" : "Create / update group"}
           </button>
-          <p className="muted">{message}</p>
+          <p className="muted">
+            {!drawHasEnoughTeams
+              ? `Only ${activeTeamCount} active countries left; this draw needs ${drawTeamRequirement}.`
+              : message}
+          </p>
         </div>
 
         {inviteLinks.length > 0 && (
@@ -437,52 +452,6 @@ export default function AdminPage() {
         </main>
       )}
 
-      <section className="shell admin-results">
-        <div className="topbar compact">
-          <div>
-            <p className="eyebrow">Result control</p>
-            <h1>Update results</h1>
-          </div>
-        </div>
-        <div className="admin-grid">
-          <label>
-            Country
-            <select value={country} onChange={(event) => setCountry(event.target.value)}>
-              <option value="">Select country</option>
-              {state?.teams.map((team) => (
-                <option key={team.country} value={team.country}>
-                  {team.country}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            FIFA finish rank
-            <input
-              value={finalRank}
-              onChange={(event) => setFinalRank(event.target.value)}
-              inputMode="numeric"
-              placeholder="1 for champion, 48 for last"
-            />
-          </label>
-          <label>
-            Stage
-            <input
-              value={stage}
-              onChange={(event) => setStage(event.target.value)}
-              placeholder="Champion, Runner-up, Group stage..."
-            />
-          </label>
-          <label className="wide">
-            Result note
-            <textarea value={note} onChange={(event) => setNote(event.target.value)} />
-          </label>
-          <button className="primary-button" onClick={saveResult} disabled={!country}>
-            Save result
-          </button>
-          <p className="muted">{message}</p>
-        </div>
-      </section>
     </>
   );
 }
@@ -501,8 +470,8 @@ function buildPrizeSettings(values: {
   };
 }
 
-function normalizeMemberCount(value: number, teamsPerParticipant: number) {
-  const maxMemberCount = Math.floor(TOTAL_TEAMS / teamsPerParticipant);
+function normalizeMemberCount(value: number, teamsPerParticipant: number, teamLimit: number) {
+  const maxMemberCount = Math.max(1, Math.floor(teamLimit / teamsPerParticipant));
   if (!Number.isFinite(value)) return 1;
   return Math.min(Math.max(Math.trunc(value), 1), maxMemberCount);
 }
@@ -534,4 +503,21 @@ function buildAssignments(rows: AssignmentEditorRow[], memberCount: number, team
     }
     return { name, teams };
   });
+}
+
+function buildDrawParticipants(rows: AssignmentEditorRow[], memberCount: number) {
+  const visibleRows = ensureAssignmentRowCount(rows, memberCount).slice(0, memberCount);
+  const seenNames = new Set<string>();
+
+  return visibleRows.map((row, index) => {
+    const name = row.name.trim();
+    if (!name) throw new Error(`Alias ${index + 1} is required`);
+    if (seenNames.has(name)) throw new Error(`Duplicate alias: ${name}`);
+    seenNames.add(name);
+    return { name };
+  });
+}
+
+function teamPlaceholder(teamsPerParticipant: number) {
+  return Array.from({ length: teamsPerParticipant }, (_, index) => `Team ${index + 1}`).join(", ");
 }
