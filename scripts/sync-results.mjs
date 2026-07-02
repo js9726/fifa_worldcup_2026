@@ -438,8 +438,8 @@ await sql.begin(async (tx) => {
       update fixtures
       set home_score = ${match.homeScore},
           away_score = ${match.awayScore},
-          regular_home_score = ${match.ninetyHome},
-          regular_away_score = ${match.ninetyAway},
+          regular_home_score = coalesce(${match.ninetyHome}, fixtures.regular_home_score),
+          regular_away_score = coalesce(${match.ninetyAway}, fixtures.regular_away_score),
           kickoff = ${match.utcDate},
           stage = ${stageLabel},
           home_country = ${match.home},
@@ -454,8 +454,8 @@ await sql.begin(async (tx) => {
         set external_id = ${match.externalId},
             home_score = ${match.homeScore},
             away_score = ${match.awayScore},
-            regular_home_score = ${match.ninetyHome},
-            regular_away_score = ${match.ninetyAway},
+            regular_home_score = coalesce(${match.ninetyHome}, fixtures.regular_home_score),
+            regular_away_score = coalesce(${match.ninetyAway}, fixtures.regular_away_score),
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
             venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
@@ -496,10 +496,12 @@ await sql.begin(async (tx) => {
 });
 
 // ---------------------------------------------------------------------------
-// Settle peer-to-peer bets on finished fixtures (idempotent: only pending slips).
+// Settle peer-to-peer bets on finished fixtures. Pending slips are settled once,
+// and settled AH slips are corrected if 90-minute score details arrive later.
 // ---------------------------------------------------------------------------
 
 let acceptancesSettled = 0;
+let acceptancesCorrected = 0;
 let offersResolved = 0;
 let offersHeld = 0;
 let offersAutoClosed = 0;
@@ -529,15 +531,23 @@ await sql.begin(async (tx) => {
     if (match.status !== "FINISHED" || !match.home || !match.away) continue;
     if (match.homeScore === null || match.awayScore === null) continue;
 
-    const fixtureRows = await tx`select id from fixtures where external_id = ${match.externalId} limit 1`;
+    const fixtureRows = await tx`
+      select id, regular_home_score, regular_away_score
+      from fixtures
+      where external_id = ${match.externalId}
+      limit 1
+    `;
     if (!fixtureRows.length) continue;
     const fixtureId = fixtureRows[0].id;
 
     const offers = await tx`
-      select id, market, creator_side, opponent_side, settlement_basis, handicap_team, handicap_line
+      select id, market, creator_side, opponent_side, settlement_basis, handicap_team, handicap_line, status
       from bet_offers
       where fixture_id = ${fixtureId}
-        and status in ('open', 'filled')
+        and (
+          status in ('open', 'filled')
+          or (status = 'settled' and market = 'asian_handicap')
+        )
     `;
     if (!offers.length) continue;
 
@@ -546,8 +556,8 @@ await sql.begin(async (tx) => {
       awayCountry: match.away,
       fullHome: match.homeScore,
       fullAway: match.awayScore,
-      ninetyHome: match.ninetyHome,
-      ninetyAway: match.ninetyAway,
+      ninetyHome: match.ninetyHome ?? fixtureRows[0].regular_home_score,
+      ninetyAway: match.ninetyAway ?? fixtureRows[0].regular_away_score,
       overallWinner: match.winner
     };
 
@@ -568,22 +578,32 @@ await sql.begin(async (tx) => {
         continue;
       }
 
-      const pending = await tx`
-        select id, amount from bet_acceptances where offer_id = ${offer.id} and status = 'pending'
+      const settlementCandidates = await tx`
+        select id, amount, status, result, ledger_delta
+        from bet_acceptances
+        where offer_id = ${offer.id}
+          and status in ('pending', 'settled')
       `;
 
-      for (const acceptance of pending) {
+      for (const acceptance of settlementCandidates) {
         const delta = Math.round(outcome.deltaFactor * Number(acceptance.amount) * 100) / 100;
+        const existingDelta = Math.round(Number(acceptance.ledger_delta) * 100) / 100;
+        const isCorrection =
+          acceptance.status === "settled" && (acceptance.result !== outcome.result || existingDelta !== delta);
+        const isNewSettlement = acceptance.status === "pending";
+        if (!isNewSettlement && !isCorrection) continue;
+
         await tx`
           update bet_acceptances
           set status = 'settled', result = ${outcome.result}, ledger_delta = ${delta}
           where id = ${acceptance.id}
         `;
-        acceptancesSettled += 1;
+        if (isNewSettlement) acceptancesSettled += 1;
+        if (isCorrection) acceptancesCorrected += 1;
       }
 
       await tx`
-        update bet_offers set status = ${pending.length ? "settled" : "closed"} where id = ${offer.id}
+        update bet_offers set status = ${settlementCandidates.length ? "settled" : "closed"} where id = ${offer.id}
       `;
       offersResolved += 1;
     }
@@ -596,7 +616,7 @@ console.log(
   `Synced ${fixturesTouched} fixture row(s) and placed ${placements.size}/48 team(s) from football-data.org (${competition}).`
 );
 console.log(
-  `Settled ${acceptancesSettled} bet slip(s) across ${offersResolved} offer(s); ${offersHeld} offer(s) held for more data; auto-closed ${offersAutoClosed} unaccepted offer(s) past kickoff.`
+  `Settled ${acceptancesSettled} bet slip(s), corrected ${acceptancesCorrected} settled slip(s), across ${offersResolved} offer(s); ${offersHeld} offer(s) held for more data; auto-closed ${offersAutoClosed} unaccepted offer(s) past kickoff.`
 );
 if (finishedMatchCount > finishedWithScoreCount) {
   console.log(
