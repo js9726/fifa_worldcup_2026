@@ -263,9 +263,12 @@ function runSelfTest() {
     homeCountry: "Argentina",
     awayCountry: "France",
     fullHome: 3,
-    fullAway: 3,
+    fullAway: 2,
     ninetyHome: 2,
     ninetyAway: 2,
+    extraHome: 1,
+    extraAway: 0,
+    duration: "EXTRA_TIME",
     overallWinner: "HOME"
   };
   const advanceLoss = settleForAccepter(
@@ -278,6 +281,29 @@ function runSelfTest() {
     winnerFixture
   );
   expect("90-min winner: a 90-min draw voids the winner bet", ninetyVoid?.result === "void");
+
+  const afterEtLoss = settleForAccepter(
+    { market: "winner", creatorSide: "Argentina", settlementBasis: "after_extra_time" },
+    winnerFixture
+  );
+  expect("after-extra-time winner: uses 120-minute score before penalties", afterEtLoss?.result === "loss");
+
+  const afterEtPenaltyVoid = settleForAccepter(
+    { market: "winner", creatorSide: "Argentina", settlementBasis: "after_extra_time" },
+    {
+      homeCountry: "Argentina",
+      awayCountry: "France",
+      fullHome: 5,
+      fullAway: 4,
+      ninetyHome: 1,
+      ninetyAway: 1,
+      extraHome: 0,
+      extraAway: 0,
+      duration: "PENALTY_SHOOTOUT",
+      overallWinner: "HOME"
+    }
+  );
+  expect("after-extra-time winner: penalty shootout draw is void", afterEtPenaltyVoid?.result === "void");
 
   const ahFixture = { homeCountry: "Spain", awayCountry: "Cape Verde", fullHome: 4, fullAway: 0, ninetyHome: 4, ninetyAway: 0 };
   const ahLoss = settleForAccepter(
@@ -303,11 +329,28 @@ function runSelfTest() {
     { homeCountry: "Brazil", awayCountry: "Haiti", ninetyHome: null, ninetyAway: null, fullHome: 2, fullAway: 0 }
   );
   expect("missing 90-min score holds the slip (null)", held === null);
-  const ahIgnoresAdvance = settleForAccepter(
-    { market: "asian_handicap", handicapTeam: "Paraguay", handicapLine: 1.5, settlementBasis: "advance_winner" },
-    { homeCountry: "Germany", awayCountry: "Paraguay", ninetyHome: 4, ninetyAway: 2, fullHome: 4, fullAway: 5 }
+
+  const extraTimeAhLoss = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Belgium", handicapLine: -0.25, settlementBasis: "extra_time" },
+    {
+      homeCountry: "Belgium",
+      awayCountry: "Senegal",
+      fullHome: 3,
+      fullAway: 2,
+      ninetyHome: 2,
+      ninetyAway: 2,
+      extraHome: 1,
+      extraAway: 0,
+      duration: "EXTRA_TIME"
+    }
   );
-  expect("AH settlement ignores advance-winner basis and uses 90-min score", ahIgnoresAdvance?.result === "win");
+  expect("extra-time AH: uses extra-time goals only", extraTimeAhLoss?.result === "loss");
+
+  const extraTimeAhVoid = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Spain", handicapLine: -0.25, settlementBasis: "extra_time" },
+    { homeCountry: "Spain", awayCountry: "Cape Verde", ninetyHome: 4, ninetyAway: 0, fullHome: 4, fullAway: 0, duration: "REGULAR" }
+  );
+  expect("extra-time AH: match without extra time voids", extraTimeAhVoid?.result === "void");
 
   let failed = 0;
   for (const { label, ok } of checks) {
@@ -360,6 +403,9 @@ const matches = (matchesRaw.matches ?? []).map((m) => ({
   // full-time score when the match never went past regulation.
   ninetyHome: m.score?.regularTime?.home ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.home ?? null : null),
   ninetyAway: m.score?.regularTime?.away ?? (m.score?.duration === "REGULAR" ? m.score?.fullTime?.away ?? null : null),
+  extraHome: m.score?.extraTime?.home ?? null,
+  extraAway: m.score?.extraTime?.away ?? null,
+  duration: m.score?.duration ?? null,
   winner: resolveMatchWinner(m)
 }));
 
@@ -425,7 +471,10 @@ await sql.begin(async (tx) => {
     alter table fixtures
       add column if not exists regular_home_score integer,
       add column if not exists regular_away_score integer,
-      add column if not exists regular_score_manual boolean not null default false
+      add column if not exists regular_score_manual boolean not null default false,
+      add column if not exists extra_home_score integer,
+      add column if not exists extra_away_score integer,
+      add column if not exists score_duration text
   `;
   await tx`create unique index if not exists fixtures_external_id_key on fixtures (external_id)`;
 
@@ -447,6 +496,15 @@ await sql.begin(async (tx) => {
             when fixtures.regular_score_manual then fixtures.regular_away_score
             else coalesce(${match.ninetyAway}, fixtures.regular_away_score)
           end,
+          extra_home_score = case
+            when ${match.duration} = 'REGULAR' then null
+            else coalesce(${match.extraHome}, fixtures.extra_home_score)
+          end,
+          extra_away_score = case
+            when ${match.duration} = 'REGULAR' then null
+            else coalesce(${match.extraAway}, fixtures.extra_away_score)
+          end,
+          score_duration = coalesce(${match.duration}, fixtures.score_duration),
           kickoff = ${match.utcDate},
           stage = ${stageLabel},
           home_country = ${match.home},
@@ -469,6 +527,15 @@ await sql.begin(async (tx) => {
               when fixtures.regular_score_manual then fixtures.regular_away_score
               else coalesce(${match.ninetyAway}, fixtures.regular_away_score)
             end,
+            extra_home_score = case
+              when ${match.duration} = 'REGULAR' then null
+              else coalesce(${match.extraHome}, fixtures.extra_home_score)
+            end,
+            extra_away_score = case
+              when ${match.duration} = 'REGULAR' then null
+              else coalesce(${match.extraAway}, fixtures.extra_away_score)
+            end,
+            score_duration = coalesce(${match.duration}, fixtures.score_duration),
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
             venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
@@ -482,11 +549,15 @@ await sql.begin(async (tx) => {
       result = await tx`
         insert into fixtures (
           external_id, kickoff, stage, home_country, away_country, venue,
-          home_score, away_score, regular_home_score, regular_away_score
+          home_score, away_score, regular_home_score, regular_away_score,
+          extra_home_score, extra_away_score, score_duration
         )
         values (
           ${match.externalId}, ${match.utcDate}, ${stageLabel}, ${match.home}, ${match.away}, ${venue},
-          ${match.homeScore}, ${match.awayScore}, ${match.ninetyHome}, ${match.ninetyAway}
+          ${match.homeScore}, ${match.awayScore}, ${match.ninetyHome}, ${match.ninetyAway},
+          ${match.duration === "REGULAR" ? null : match.extraHome},
+          ${match.duration === "REGULAR" ? null : match.extraAway},
+          ${match.duration}
         )
         on conflict (external_id) do nothing
       `;
@@ -545,7 +616,14 @@ await sql.begin(async (tx) => {
     if (match.homeScore === null || match.awayScore === null) continue;
 
     const fixtureRows = await tx`
-      select id, regular_home_score, regular_away_score, regular_score_manual
+      select
+        id,
+        regular_home_score,
+        regular_away_score,
+        regular_score_manual,
+        extra_home_score,
+        extra_away_score,
+        score_duration
       from fixtures
       where external_id = ${match.externalId}
       limit 1
@@ -558,8 +636,7 @@ await sql.begin(async (tx) => {
       from bet_offers
       where fixture_id = ${fixtureId}
         and (
-          status in ('open', 'filled')
-          or (status = 'settled' and market = 'asian_handicap')
+          status in ('open', 'filled', 'settled')
         )
     `;
     if (!offers.length) continue;
@@ -575,6 +652,9 @@ await sql.begin(async (tx) => {
       ninetyAway: fixtureRows[0].regular_score_manual
         ? fixtureRows[0].regular_away_score
         : match.ninetyAway ?? fixtureRows[0].regular_away_score,
+      extraHome: match.extraHome ?? fixtureRows[0].extra_home_score,
+      extraAway: match.extraAway ?? fixtureRows[0].extra_away_score,
+      duration: match.duration ?? fixtureRows[0].score_duration,
       overallWinner: match.winner
     };
 

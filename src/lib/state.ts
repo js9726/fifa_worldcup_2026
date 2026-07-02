@@ -128,12 +128,15 @@ function ensureOddsColumns(sql: SqlClient) {
   return oddsSchemaReady;
 }
 
-function ensureFixtureScoreColumns(sql: SqlClient) {
+export function ensureFixtureScoreColumns(sql: SqlClient) {
   fixtureScoreSchemaReady ??= sql`
     alter table fixtures
       add column if not exists regular_home_score integer,
       add column if not exists regular_away_score integer,
-      add column if not exists regular_score_manual boolean not null default false
+      add column if not exists regular_score_manual boolean not null default false,
+      add column if not exists extra_home_score integer,
+      add column if not exists extra_away_score integer,
+      add column if not exists score_duration text
   `.then(() => undefined);
 
   return fixtureScoreSchemaReady;
@@ -359,6 +362,9 @@ export async function getAppState(input?: string | null | StateOptions): Promise
         f.away_score as "awayScore",
         f.regular_home_score as "regularHomeScore",
         f.regular_away_score as "regularAwayScore",
+        f.extra_home_score as "extraHomeScore",
+        f.extra_away_score as "extraAwayScore",
+        f.score_duration as "scoreDuration",
         f.odds_provider as "oddsProvider",
         f.odds_bookmaker as "oddsBookmaker",
         f.odds_market as "oddsMarket",

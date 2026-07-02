@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { ensureBettingTables } from "@/lib/state";
 import { ensureGroupSchema } from "@/lib/groups";
+import type { BetSettlementBasis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const MARKETS = new Set(["winner", "asian_handicap"]);
-const SETTLEMENT_BASES = new Set(["advance_winner", "ninety_minutes"]);
+const WINNER_SETTLEMENT_BASES = new Set(["advance_winner", "ninety_minutes", "after_extra_time"]);
+const AH_SETTLEMENT_BASES = new Set(["ninety_minutes", "extra_time"]);
 
 type OfferBody = {
   token?: string;
@@ -43,11 +45,12 @@ export async function POST(request: NextRequest) {
   }
 
   const market = body.market as "winner" | "asian_handicap";
-  const requestedSettlementBasis = market === "asian_handicap" ? "ninety_minutes" : body.settlementBasis;
-  if (!SETTLEMENT_BASES.has(requestedSettlementBasis ?? "")) {
+  const requestedSettlementBasis = body.settlementBasis;
+  const allowedSettlementBases = market === "asian_handicap" ? AH_SETTLEMENT_BASES : WINNER_SETTLEMENT_BASES;
+  if (!allowedSettlementBases.has(requestedSettlementBasis ?? "")) {
     return NextResponse.json({ error: "Unknown settlement basis" }, { status: 400 });
   }
-  const settlementBasis = requestedSettlementBasis as "advance_winner" | "ninety_minutes";
+  const settlementBasis = requestedSettlementBasis as BetSettlementBasis;
 
   const maxAmount = Number(body.maxAmount);
 

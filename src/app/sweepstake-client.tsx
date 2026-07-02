@@ -198,22 +198,69 @@ function marketLabel(offer: BetOffer) {
 }
 
 function settlementBasisLabel(offer: BetOffer) {
-  if (offer.market === "asian_handicap") return "90-Min Result";
-  return offer.settlementBasis === "advance_winner" ? "Advance Winner" : "90-Min Result";
+  if (offer.market === "asian_handicap") {
+    return offer.settlementBasis === "extra_time" ? "Extra Time Only" : "90-Min Result";
+  }
+
+  switch (offer.settlementBasis) {
+    case "advance_winner":
+      return "To Qualify";
+    case "after_extra_time":
+      return "After Extra Time";
+    default:
+      return "90-Min Result";
+  }
 }
 
 function settlementBasisDetail(offer: BetOffer) {
-  if (offer.market === "asian_handicap") return "Normal time plus stoppage only";
-  return offer.settlementBasis === "advance_winner"
-    ? "Includes extra time and penalties"
-    : "Normal time plus stoppage only";
+  if (offer.market === "asian_handicap") {
+    return offer.settlementBasis === "extra_time"
+      ? "Extra-time goals only; void if no extra time"
+      : "Normal time plus stoppage only";
+  }
+
+  switch (offer.settlementBasis) {
+    case "advance_winner":
+      return "Includes extra time and penalties";
+    case "after_extra_time":
+      return "120 minutes, penalties excluded";
+    default:
+      return "Normal time plus stoppage only";
+  }
+}
+
+function scoreAfterExtraTime(fixture: Fixture) {
+  if (fixture.regularHomeScore === null || fixture.regularAwayScore === null) return null;
+  if (fixture.scoreDuration === "REGULAR") {
+    return { home: fixture.regularHomeScore, away: fixture.regularAwayScore };
+  }
+  if (fixture.extraHomeScore !== null && fixture.extraAwayScore !== null) {
+    return {
+      home: fixture.regularHomeScore + fixture.extraHomeScore,
+      away: fixture.regularAwayScore + fixture.extraAwayScore
+    };
+  }
+  if (fixture.scoreDuration === "EXTRA_TIME" && fixture.homeScore !== null && fixture.awayScore !== null) {
+    return { home: fixture.homeScore, away: fixture.awayScore };
+  }
+  return null;
 }
 
 function betScoreText(fixture: Fixture, offer: BetOffer) {
+  if (offer.market === "asian_handicap" && offer.settlementBasis === "extra_time") {
+    if (fixture.scoreDuration === "REGULAR") return "No ET";
+    if (fixture.extraHomeScore === null || fixture.extraAwayScore === null) return null;
+    return `${fixture.extraHomeScore}-${fixture.extraAwayScore} ET`;
+  }
+
+  if (offer.settlementBasis === "after_extra_time") {
+    const score = scoreAfterExtraTime(fixture);
+    return score ? `${score.home}-${score.away} AET` : null;
+  }
+
   const useRegularScore =
-    offer.market === "asian_handicap" &&
-    fixture.regularHomeScore !== null &&
-    fixture.regularAwayScore !== null;
+    offer.settlementBasis === "ninety_minutes" ||
+    (offer.market === "asian_handicap" && offer.settlementBasis !== "extra_time");
   const homeScore = useRegularScore ? fixture.regularHomeScore : fixture.homeScore;
   const awayScore = useRegularScore ? fixture.regularAwayScore : fixture.awayScore;
 
@@ -1294,7 +1341,7 @@ function CreateOfferForm({
       fixtureId: selectedFixture.id,
       market,
       backedCountry,
-      settlementBasis: market === "asian_handicap" ? "ninety_minutes" : settlementBasis,
+      settlementBasis,
       handicapLine: market === "asian_handicap" ? handicapLine : null,
       maxAmount,
       note: note.trim() || null
@@ -1401,17 +1448,23 @@ function CreateOfferForm({
 
             <label>
               <span>Settlement basis</span>
-              {market === "asian_handicap" ? (
-                <div className="bet-static-field">90-Min Result</div>
-              ) : (
-                <select
-                  value={settlementBasis}
-                  onChange={(event) => setSettlementBasis(event.target.value as BetOffer["settlementBasis"])}
-                >
-                  <option value="advance_winner">Advance Winner (incl. ET/pens)</option>
-                  <option value="ninety_minutes">90-Min Result</option>
-                </select>
-              )}
+              <select
+                value={settlementBasis}
+                onChange={(event) => setSettlementBasis(event.target.value as BetOffer["settlementBasis"])}
+              >
+                {market === "asian_handicap" ? (
+                  <>
+                    <option value="ninety_minutes">90-Min Result</option>
+                    <option value="extra_time">Extra Time Only</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="advance_winner">To Qualify (incl. ET/pens)</option>
+                    <option value="ninety_minutes">90-Min Result</option>
+                    <option value="after_extra_time">After Extra Time (no pens)</option>
+                  </>
+                )}
+              </select>
             </label>
 
             <label>

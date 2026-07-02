@@ -44,6 +44,9 @@ export type Fixture = {
   awayScore: number | null;
   regularHomeScore: number | null;
   regularAwayScore: number | null;
+  extraHomeScore: number | null;
+  extraAwayScore: number | null;
+  scoreDuration: "REGULAR" | "EXTRA_TIME" | "PENALTY_SHOOTOUT" | null;
   homeOwner: string | null;
   awayOwner: string | null;
   oddsProvider: string | null;
@@ -83,7 +86,7 @@ export type SweepstakeGroupSummary = SweepstakeGroup & {
 
 export type BetMarket = "winner" | "asian_handicap";
 
-export type BetSettlementBasis = "advance_winner" | "ninety_minutes";
+export type BetSettlementBasis = "advance_winner" | "ninety_minutes" | "after_extra_time" | "extra_time";
 
 export type BetOfferStatus = "open" | "filled" | "closed" | "settled" | "void";
 
