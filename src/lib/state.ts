@@ -132,7 +132,8 @@ function ensureFixtureScoreColumns(sql: SqlClient) {
   fixtureScoreSchemaReady ??= sql`
     alter table fixtures
       add column if not exists regular_home_score integer,
-      add column if not exists regular_away_score integer
+      add column if not exists regular_away_score integer,
+      add column if not exists regular_score_manual boolean not null default false
   `.then(() => undefined);
 
   return fixtureScoreSchemaReady;

@@ -424,7 +424,8 @@ await sql.begin(async (tx) => {
   await tx`
     alter table fixtures
       add column if not exists regular_home_score integer,
-      add column if not exists regular_away_score integer
+      add column if not exists regular_away_score integer,
+      add column if not exists regular_score_manual boolean not null default false
   `;
   await tx`create unique index if not exists fixtures_external_id_key on fixtures (external_id)`;
 
@@ -438,8 +439,14 @@ await sql.begin(async (tx) => {
       update fixtures
       set home_score = ${match.homeScore},
           away_score = ${match.awayScore},
-          regular_home_score = coalesce(${match.ninetyHome}, fixtures.regular_home_score),
-          regular_away_score = coalesce(${match.ninetyAway}, fixtures.regular_away_score),
+          regular_home_score = case
+            when fixtures.regular_score_manual then fixtures.regular_home_score
+            else coalesce(${match.ninetyHome}, fixtures.regular_home_score)
+          end,
+          regular_away_score = case
+            when fixtures.regular_score_manual then fixtures.regular_away_score
+            else coalesce(${match.ninetyAway}, fixtures.regular_away_score)
+          end,
           kickoff = ${match.utcDate},
           stage = ${stageLabel},
           home_country = ${match.home},
@@ -454,8 +461,14 @@ await sql.begin(async (tx) => {
         set external_id = ${match.externalId},
             home_score = ${match.homeScore},
             away_score = ${match.awayScore},
-            regular_home_score = coalesce(${match.ninetyHome}, fixtures.regular_home_score),
-            regular_away_score = coalesce(${match.ninetyAway}, fixtures.regular_away_score),
+            regular_home_score = case
+              when fixtures.regular_score_manual then fixtures.regular_home_score
+              else coalesce(${match.ninetyHome}, fixtures.regular_home_score)
+            end,
+            regular_away_score = case
+              when fixtures.regular_score_manual then fixtures.regular_away_score
+              else coalesce(${match.ninetyAway}, fixtures.regular_away_score)
+            end,
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
             venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
@@ -532,7 +545,7 @@ await sql.begin(async (tx) => {
     if (match.homeScore === null || match.awayScore === null) continue;
 
     const fixtureRows = await tx`
-      select id, regular_home_score, regular_away_score
+      select id, regular_home_score, regular_away_score, regular_score_manual
       from fixtures
       where external_id = ${match.externalId}
       limit 1
@@ -556,8 +569,12 @@ await sql.begin(async (tx) => {
       awayCountry: match.away,
       fullHome: match.homeScore,
       fullAway: match.awayScore,
-      ninetyHome: match.ninetyHome ?? fixtureRows[0].regular_home_score,
-      ninetyAway: match.ninetyAway ?? fixtureRows[0].regular_away_score,
+      ninetyHome: fixtureRows[0].regular_score_manual
+        ? fixtureRows[0].regular_home_score
+        : match.ninetyHome ?? fixtureRows[0].regular_home_score,
+      ninetyAway: fixtureRows[0].regular_score_manual
+        ? fixtureRows[0].regular_away_score
+        : match.ninetyAway ?? fixtureRows[0].regular_away_score,
       overallWinner: match.winner
     };
 

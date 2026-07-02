@@ -125,6 +125,7 @@ await sql.begin(async (tx) => {
       away_score integer,
       regular_home_score integer,
       regular_away_score integer,
+      regular_score_manual boolean not null default false,
       odds_provider text,
       odds_bookmaker text,
       odds_market text,
@@ -142,6 +143,7 @@ await sql.begin(async (tx) => {
     alter table fixtures
       add column if not exists regular_home_score integer,
       add column if not exists regular_away_score integer,
+      add column if not exists regular_score_manual boolean not null default false,
       add column if not exists odds_provider text,
       add column if not exists odds_bookmaker text,
       add column if not exists odds_market text,
