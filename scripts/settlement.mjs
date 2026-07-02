@@ -46,9 +46,8 @@ export function settleForAccepter(offer, fixture) {
   }
 
   if (offer.market === "asian_handicap") {
-    const useFull = offer.settlementBasis === "advance_winner";
-    const scoreHome = useFull ? fixture.fullHome : fixture.ninetyHome;
-    const scoreAway = useFull ? fixture.fullAway : fixture.ninetyAway;
+    const scoreHome = fixture.ninetyHome;
+    const scoreAway = fixture.ninetyAway;
     if (scoreHome == null || scoreAway == null || offer.handicapTeam == null || offer.handicapLine == null) {
       return null;
     }

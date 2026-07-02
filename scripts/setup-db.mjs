@@ -123,6 +123,8 @@ await sql.begin(async (tx) => {
       venue text not null,
       home_score integer,
       away_score integer,
+      regular_home_score integer,
+      regular_away_score integer,
       odds_provider text,
       odds_bookmaker text,
       odds_market text,
@@ -138,6 +140,8 @@ await sql.begin(async (tx) => {
 
   await tx`
     alter table fixtures
+      add column if not exists regular_home_score integer,
+      add column if not exists regular_away_score integer,
       add column if not exists odds_provider text,
       add column if not exists odds_bookmaker text,
       add column if not exists odds_market text,

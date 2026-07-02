@@ -93,6 +93,8 @@ const fixtures: Fixture[] = seed.fixtures.map((fixture, index) => {
     venue: fixture.venue,
     homeScore: score[0],
     awayScore: score[1],
+    regularHomeScore: score[0],
+    regularAwayScore: score[1],
     homeOwner: ownerByCountry.get(fixture.home) ?? null,
     awayOwner: ownerByCountry.get(fixture.away) ?? null,
     oddsProvider: null,
@@ -117,6 +119,8 @@ fixtures.push({
   venue: "New Jersey",
   homeScore: 2,
   awayScore: 2,
+  regularHomeScore: 2,
+  regularAwayScore: 2,
   homeOwner: ownerByCountry.get("Argentina") ?? null,
   awayOwner: ownerByCountry.get("France") ?? null,
   oddsProvider: "Demo",
@@ -226,7 +230,7 @@ const demoBetOffers: BetOffer[] = [
     remainingAmount: 35,
     status: "open",
     createdAt: "2026-06-14T23:30:00.000Z",
-    note: "AH offer uses the 90-minute score basis unless the creator selects otherwise.",
+    note: "AH offer uses the 90-minute score basis.",
     acceptances: [
       {
         id: 103,

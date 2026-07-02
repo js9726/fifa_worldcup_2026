@@ -198,13 +198,27 @@ function marketLabel(offer: BetOffer) {
 }
 
 function settlementBasisLabel(offer: BetOffer) {
+  if (offer.market === "asian_handicap") return "90-Min Result";
   return offer.settlementBasis === "advance_winner" ? "Advance Winner" : "90-Min Result";
 }
 
 function settlementBasisDetail(offer: BetOffer) {
+  if (offer.market === "asian_handicap") return "Normal time plus stoppage only";
   return offer.settlementBasis === "advance_winner"
     ? "Includes extra time and penalties"
     : "Normal time plus stoppage only";
+}
+
+function betScoreText(fixture: Fixture, offer: BetOffer) {
+  const useRegularScore =
+    offer.market === "asian_handicap" &&
+    fixture.regularHomeScore !== null &&
+    fixture.regularAwayScore !== null;
+  const homeScore = useRegularScore ? fixture.regularHomeScore : fixture.homeScore;
+  const awayScore = useRegularScore ? fixture.regularAwayScore : fixture.awayScore;
+
+  if (homeScore === null || awayScore === null) return null;
+  return `${homeScore}-${awayScore}${useRegularScore ? " (90')" : ""}`;
 }
 
 function resultLabel(acceptance: BetAcceptance) {
@@ -392,9 +406,11 @@ function getMatchupStats(
 
   let asianResult: string | null = null;
   if (fixtureHasScore(fixture)) {
+    const homeScore = fixture.regularHomeScore ?? fixture.homeScore ?? 0;
+    const awayScore = fixture.regularAwayScore ?? fixture.awayScore ?? 0;
     const margin = homeFavourite
-      ? (fixture.homeScore ?? 0) - (fixture.awayScore ?? 0)
-      : (fixture.awayScore ?? 0) - (fixture.homeScore ?? 0);
+      ? homeScore - awayScore
+      : awayScore - homeScore;
     asianResult = margin > line ? "covered" : margin === line ? "push" : "missed";
   }
 
@@ -1133,15 +1149,15 @@ function BetPoolPanel({
               <span>Result</span>
             </div>
             {historyRows.map(({ offer, fixture, acceptance }) => {
-              const scoreKnown = fixture && fixture.homeScore !== null && fixture.awayScore !== null;
+              const betScore = fixture ? betScoreText(fixture, offer) : null;
               return (
                 <div className="bet-history-row" key={acceptance.id}>
                   <span className="bet-history-match">
                     {fixture ? `${fixture.homeCountry} v ${fixture.awayCountry}` : "Unknown"}
-                    {scoreKnown && (
+                    {betScore && (
                       <strong className="bet-score">
                         {" "}
-                        {fixture!.homeScore}–{fixture!.awayScore}
+                        {betScore}
                       </strong>
                     )}
                   </span>
@@ -1278,7 +1294,7 @@ function CreateOfferForm({
       fixtureId: selectedFixture.id,
       market,
       backedCountry,
-      settlementBasis,
+      settlementBasis: market === "asian_handicap" ? "ninety_minutes" : settlementBasis,
       handicapLine: market === "asian_handicap" ? handicapLine : null,
       maxAmount,
       note: note.trim() || null
@@ -1385,13 +1401,17 @@ function CreateOfferForm({
 
             <label>
               <span>Settlement basis</span>
-              <select
-                value={settlementBasis}
-                onChange={(event) => setSettlementBasis(event.target.value as BetOffer["settlementBasis"])}
-              >
-                <option value="advance_winner">Advance Winner (incl. ET/pens)</option>
-                <option value="ninety_minutes">90-Min Result</option>
-              </select>
+              {market === "asian_handicap" ? (
+                <div className="bet-static-field">90-Min Result</div>
+              ) : (
+                <select
+                  value={settlementBasis}
+                  onChange={(event) => setSettlementBasis(event.target.value as BetOffer["settlementBasis"])}
+                >
+                  <option value="advance_winner">Advance Winner (incl. ET/pens)</option>
+                  <option value="ninety_minutes">90-Min Result</option>
+                </select>
+              )}
             </label>
 
             <label>

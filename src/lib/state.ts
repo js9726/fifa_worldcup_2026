@@ -47,6 +47,7 @@ type FixtureRow = Omit<Fixture, "oddsHandicapLine" | "oddsHomePrice" | "oddsAway
 
 let oddsSchemaReady: Promise<void> | null = null;
 let bettingSchemaReady: Promise<void> | null = null;
+let fixtureScoreSchemaReady: Promise<void> | null = null;
 
 type BetOfferRow = {
   id: number;
@@ -125,6 +126,16 @@ function ensureOddsColumns(sql: SqlClient) {
   `.then(() => undefined);
 
   return oddsSchemaReady;
+}
+
+function ensureFixtureScoreColumns(sql: SqlClient) {
+  fixtureScoreSchemaReady ??= sql`
+    alter table fixtures
+      add column if not exists regular_home_score integer,
+      add column if not exists regular_away_score integer
+  `.then(() => undefined);
+
+  return fixtureScoreSchemaReady;
 }
 
 export function ensureBettingTables(sql: SqlClient = getSql()) {
@@ -282,7 +293,7 @@ export async function getAppState(input?: string | null | StateOptions): Promise
   const groupSlug = options.groupSlug ?? null;
   const sql = getSql();
   await ensureBettingTables(sql);
-  await Promise.all([ensureOddsColumns(sql), ensureGroupSchema(sql)]);
+  await Promise.all([ensureOddsColumns(sql), ensureFixtureScoreColumns(sql), ensureGroupSchema(sql)]);
 
   const context = await resolveStateContext(sql, { inviteToken, groupSlug });
   if (!context.group) return emptyAppState();
@@ -345,6 +356,8 @@ export async function getAppState(input?: string | null | StateOptions): Promise
         f.venue,
         f.home_score as "homeScore",
         f.away_score as "awayScore",
+        f.regular_home_score as "regularHomeScore",
+        f.regular_away_score as "regularAwayScore",
         f.odds_provider as "oddsProvider",
         f.odds_bookmaker as "oddsBookmaker",
         f.odds_market as "oddsMarket",

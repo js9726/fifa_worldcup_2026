@@ -42,6 +42,8 @@ export type Fixture = {
   venue: string;
   homeScore: number | null;
   awayScore: number | null;
+  regularHomeScore: number | null;
+  regularAwayScore: number | null;
   homeOwner: string | null;
   awayOwner: string | null;
   oddsProvider: string | null;

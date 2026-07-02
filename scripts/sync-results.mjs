@@ -303,6 +303,11 @@ function runSelfTest() {
     { homeCountry: "Brazil", awayCountry: "Haiti", ninetyHome: null, ninetyAway: null, fullHome: 2, fullAway: 0 }
   );
   expect("missing 90-min score holds the slip (null)", held === null);
+  const ahIgnoresAdvance = settleForAccepter(
+    { market: "asian_handicap", handicapTeam: "Paraguay", handicapLine: 1.5, settlementBasis: "advance_winner" },
+    { homeCountry: "Germany", awayCountry: "Paraguay", ninetyHome: 4, ninetyAway: 2, fullHome: 4, fullAway: 5 }
+  );
+  expect("AH settlement ignores advance-winner basis and uses 90-min score", ahIgnoresAdvance?.result === "win");
 
   let failed = 0;
   for (const { label, ok } of checks) {
@@ -416,6 +421,11 @@ let fixturesTouched = 0;
 await sql.begin(async (tx) => {
   // Idempotent migration so existing databases gain the external-id link.
   await tx`alter table fixtures add column if not exists external_id bigint`;
+  await tx`
+    alter table fixtures
+      add column if not exists regular_home_score integer,
+      add column if not exists regular_away_score integer
+  `;
   await tx`create unique index if not exists fixtures_external_id_key on fixtures (external_id)`;
 
   // Upsert fixtures for any match whose two teams are both resolved.
@@ -428,6 +438,8 @@ await sql.begin(async (tx) => {
       update fixtures
       set home_score = ${match.homeScore},
           away_score = ${match.awayScore},
+          regular_home_score = ${match.ninetyHome},
+          regular_away_score = ${match.ninetyAway},
           kickoff = ${match.utcDate},
           stage = ${stageLabel},
           home_country = ${match.home},
@@ -442,6 +454,8 @@ await sql.begin(async (tx) => {
         set external_id = ${match.externalId},
             home_score = ${match.homeScore},
             away_score = ${match.awayScore},
+            regular_home_score = ${match.ninetyHome},
+            regular_away_score = ${match.ninetyAway},
             kickoff = ${match.utcDate},
             stage = ${stageLabel},
             venue = case when ${venue} = 'TBD' then fixtures.venue else ${venue} end
@@ -453,8 +467,14 @@ await sql.begin(async (tx) => {
 
     if (result.count === 0) {
       result = await tx`
-        insert into fixtures (external_id, kickoff, stage, home_country, away_country, venue, home_score, away_score)
-        values (${match.externalId}, ${match.utcDate}, ${stageLabel}, ${match.home}, ${match.away}, ${venue}, ${match.homeScore}, ${match.awayScore})
+        insert into fixtures (
+          external_id, kickoff, stage, home_country, away_country, venue,
+          home_score, away_score, regular_home_score, regular_away_score
+        )
+        values (
+          ${match.externalId}, ${match.utcDate}, ${stageLabel}, ${match.home}, ${match.away}, ${venue},
+          ${match.homeScore}, ${match.awayScore}, ${match.ninetyHome}, ${match.ninetyAway}
+        )
         on conflict (external_id) do nothing
       `;
     }

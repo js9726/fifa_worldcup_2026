@@ -38,14 +38,17 @@ export async function POST(request: NextRequest) {
   if (!MARKETS.has(body.market ?? "")) {
     return NextResponse.json({ error: "Unknown betting market" }, { status: 400 });
   }
-  if (!SETTLEMENT_BASES.has(body.settlementBasis ?? "")) {
-    return NextResponse.json({ error: "Unknown settlement basis" }, { status: 400 });
-  }
   if (!body.backedCountry) {
     return NextResponse.json({ error: "Pick the team you are backing" }, { status: 400 });
   }
 
   const market = body.market as "winner" | "asian_handicap";
+  const requestedSettlementBasis = market === "asian_handicap" ? "ninety_minutes" : body.settlementBasis;
+  if (!SETTLEMENT_BASES.has(requestedSettlementBasis ?? "")) {
+    return NextResponse.json({ error: "Unknown settlement basis" }, { status: 400 });
+  }
+  const settlementBasis = requestedSettlementBasis as "advance_winner" | "ninety_minutes";
+
   const maxAmount = Number(body.maxAmount);
 
   if (!Number.isFinite(maxAmount) || maxAmount <= 0) {
@@ -135,10 +138,10 @@ export async function POST(request: NextRequest) {
         )
         values (
           ${participant.pool_id}, ${fixture.id}, ${participant.id}, ${market}, ${creatorSide}, ${opponentSide},
-          ${body.settlementBasis!}, ${handicapTeam}, ${handicapLine}, ${maxAmount}, 'open', ${note}
+          ${settlementBasis}, ${handicapTeam}, ${handicapLine}, ${maxAmount}, 'open', ${note}
         )
         returning id
-      `) as Array<{ id: number }>;
+      `) as unknown as Array<{ id: number }>;
 
       return { id: insertedRows[0].id };
     });
