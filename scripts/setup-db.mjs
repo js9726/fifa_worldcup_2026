@@ -25,7 +25,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
+const sql = postgres(databaseUrl, { ssl: shouldUseSsl(databaseUrl) ? "require" : false, max: 1 });
 
 const tokenFor = () => crypto.randomBytes(18).toString("base64url");
 const DEFAULT_GROUP_SLUG = "world-cup-2026";
@@ -193,6 +193,64 @@ await sql.begin(async (tx) => {
     )
   `;
 
+  await tx`
+    create table if not exists futures_markets (
+      id serial primary key,
+      pool_id integer not null references sweepstake_groups(id) on delete cascade,
+      creator_participant_id integer references participants(id) on delete set null,
+      fixture_id integer references fixtures(id) on delete set null,
+      title text not null,
+      market_type text not null default 'generic',
+      settlement_basis text,
+      rollover_target_market_id integer references futures_markets(id),
+      auto_created boolean not null default false,
+      open_window_note text,
+      loss_rule text,
+      status text not null default 'open',
+      opens_at timestamptz,
+      closes_at timestamptz not null,
+      settled_option_id integer,
+      rollover_amount numeric(10,2) not null default 0,
+      created_at timestamptz not null default now(),
+      settled_at timestamptz
+    )
+  `;
+  await tx`
+    alter table futures_markets
+      add column if not exists creator_participant_id integer references participants(id) on delete set null,
+      add column if not exists fixture_id integer references fixtures(id) on delete set null,
+      add column if not exists settlement_basis text,
+      add column if not exists rollover_target_market_id integer references futures_markets(id),
+      add column if not exists auto_created boolean not null default false,
+      add column if not exists open_window_note text,
+      add column if not exists loss_rule text,
+      add column if not exists opens_at timestamptz
+  `;
+
+  await tx`
+    create table if not exists futures_options (
+      id serial primary key,
+      market_id integer not null references futures_markets(id) on delete cascade,
+      label text not null,
+      sort_order integer not null default 0,
+      unique (market_id, label)
+    )
+  `;
+
+  await tx`
+    create table if not exists futures_entries (
+      id serial primary key,
+      market_id integer not null references futures_markets(id) on delete cascade,
+      option_id integer not null references futures_options(id) on delete cascade,
+      participant_id integer not null references participants(id) on delete cascade,
+      amount numeric(10,2) not null,
+      status text not null default 'active',
+      result text not null default 'pending',
+      payout_amount numeric(10,2) not null default 0,
+      placed_at timestamptz not null default now()
+    )
+  `;
+
   await tx`alter table participants add column if not exists pool_id integer references sweepstake_groups(id)`;
   await tx`
     update participants
@@ -228,6 +286,12 @@ await sql.begin(async (tx) => {
   await tx`create unique index if not exists draws_pool_team_unique on draws(pool_id, team_id)`;
   await tx`create index if not exists draws_pool_participant_idx on draws(pool_id, participant_id)`;
   await tx`create index if not exists bet_offers_pool_id_idx on bet_offers(pool_id)`;
+  await tx`create index if not exists futures_markets_pool_id_idx on futures_markets(pool_id)`;
+  await tx`create index if not exists futures_markets_creator_participant_id_idx on futures_markets(creator_participant_id)`;
+  await tx`create index if not exists futures_markets_fixture_id_idx on futures_markets(fixture_id)`;
+  await tx`create index if not exists futures_options_market_id_idx on futures_options(market_id)`;
+  await tx`create index if not exists futures_entries_market_id_idx on futures_entries(market_id)`;
+  await tx`create index if not exists futures_entries_participant_id_idx on futures_entries(participant_id)`;
 
   const [{ id: defaultGroupId }] = await tx`
     select id from sweepstake_groups where slug = ${DEFAULT_GROUP_SLUG} limit 1
@@ -312,3 +376,12 @@ await sql.end();
 
 console.log(`Seeded ${seed.participants.length} participants, ${seed.teams.length} teams and ${seed.fixtures.length} fixtures.`);
 console.log("Wrote invite-links.txt");
+
+function shouldUseSsl(value) {
+  try {
+    const { hostname } = new URL(value);
+    return !["localhost", "127.0.0.1", "::1"].includes(hostname);
+  } catch {
+    return true;
+  }
+}

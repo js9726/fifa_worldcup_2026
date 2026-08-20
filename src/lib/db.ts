@@ -11,13 +11,22 @@ export function getSql() {
 
   if (!globalForSql.sweepstakeSql) {
     globalForSql.sweepstakeSql = postgres(process.env.DATABASE_URL, {
-      ssl: "require",
+      ssl: shouldUseSsl(process.env.DATABASE_URL) ? "require" : false,
       max: 3,
       idle_timeout: 20
     });
   }
 
   return globalForSql.sweepstakeSql;
+}
+
+function shouldUseSsl(databaseUrl: string) {
+  try {
+    const { hostname } = new URL(databaseUrl);
+    return !["localhost", "127.0.0.1", "::1"].includes(hostname);
+  } catch {
+    return true;
+  }
 }
 
 export function requireAdminKey(key: string | null) {

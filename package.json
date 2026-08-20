@@ -11,6 +11,8 @@
     "export:invites": "node scripts/export-invite-links.mjs",
     "backup:pools": "node scripts/backup-neon-pool-data.mjs",
     "import:walplus": "node scripts/import-walplus-group.mjs",
+    "seed:demo:futures": "node scripts/seed-demo-futures.mjs",
+    "test:futures": "node scripts/futures-pool.mjs --selftest",
     "sync:results": "node scripts/sync-results.mjs",
     "sync:odds": "node scripts/sync-odds.mjs"
   },

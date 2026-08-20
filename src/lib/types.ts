@@ -94,6 +94,14 @@ export type BetAcceptanceStatus = "pending" | "settled" | "void";
 
 export type BetAcceptanceResult = "win" | "loss" | "half_win" | "half_loss" | "void" | "pending";
 
+export type FuturesMarketStatus = "open" | "closed" | "settled" | "rolled_over" | "void";
+
+export type FuturesEntryStatus = "active" | "settled";
+
+export type FuturesEntryResult = "pending" | "win" | "partial_win" | "loss" | "rollover";
+
+export type FuturesSettlementBasis = "ninety_minutes" | "advance_winner" | "full_match" | "manual";
+
 export type BetAcceptance = {
   id: number;
   offerId: number;
@@ -127,6 +135,60 @@ export type BetOffer = {
   acceptances: BetAcceptance[];
 };
 
+export type FuturesOption = {
+  id: number;
+  marketId: number;
+  label: string;
+  sortOrder: number;
+  totalStake: number;
+  entryCount: number;
+  poolShare: number;
+  estimatedReturnFor10: number;
+  estimatedReturnFor50: number;
+};
+
+export type FuturesEntry = {
+  id: number;
+  marketId: number;
+  optionId: number;
+  participantId: number;
+  participantName: string;
+  amount: number;
+  status: FuturesEntryStatus;
+  result: FuturesEntryResult;
+  payoutAmount: number;
+  placedAt: string;
+};
+
+export type FuturesMarket = {
+  id: number;
+  groupId: number;
+  title: string;
+  marketType: string;
+  creatorParticipantId?: number | null;
+  creatorName?: string | null;
+  fixtureId?: number | null;
+  settlementBasis?: FuturesSettlementBasis;
+  rolloverTarget?: string | null;
+  autoCreated?: boolean;
+  closeDescription?: string | null;
+  lossRule?: string | null;
+  status: FuturesMarketStatus;
+  opensAt?: string | null;
+  closesAt: string;
+  settledOptionId: number | null;
+  rolloverAmount: number;
+  createdAt: string;
+  totalStake: number;
+  totalPot: number;
+  winningStake: number;
+  entryCount: number;
+  uniqueParticipantCount: number;
+  options: FuturesOption[];
+  entries: FuturesEntry[];
+  myEntries: FuturesEntry[];
+};
+
 export type BetLeaderboardRow = {
   rank: number;
   participantId: number;
@@ -139,6 +201,13 @@ export type BetLeaderboardRow = {
   openExposure: number;
   openOffers: number;
   activeAccepts: number;
+  futuresSettledNet: number;
+  futuresVolume: number;
+  futuresOpenExposure: number;
+  futuresEntries: number;
+  futuresWins: number;
+  futuresLosses: number;
+  futuresRolloverLosses: number;
 };
 
 export type BettingState = {
@@ -146,6 +215,7 @@ export type BettingState = {
   openOffers: BetOffer[];
   myOffers: BetOffer[];
   myAcceptances: BetAcceptance[];
+  futuresMarkets: FuturesMarket[];
   leaderboard: BetLeaderboardRow[];
 };
 

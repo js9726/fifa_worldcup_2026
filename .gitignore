@@ -4,6 +4,7 @@ node_modules
 .env*.local
 invite-links.txt
 invite-links.md
+demo-futures-invite-links.txt
 backups/
 *.log
 vercel-env.txt

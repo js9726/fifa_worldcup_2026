@@ -16,8 +16,17 @@ const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 const backupDir = path.join(root, "backups", `neon-pool-${timestamp}`);
 await fs.mkdir(backupDir, { recursive: true });
 
-const sql = postgres(databaseUrl, { ssl: "require", max: 1 });
-const tables = ["sweepstake_groups", "participants", "draws", "bet_offers", "bet_acceptances"];
+const sql = postgres(databaseUrl, { ssl: shouldUseSsl(databaseUrl) ? "require" : false, max: 1 });
+const tables = [
+  "sweepstake_groups",
+  "participants",
+  "draws",
+  "bet_offers",
+  "bet_acceptances",
+  "futures_markets",
+  "futures_options",
+  "futures_entries"
+];
 const manifest = {
   generatedAt: new Date().toISOString(),
   tables: {}
@@ -53,5 +62,14 @@ async function loadDotEnvLocal() {
     }
   } catch {
     // Vercel and CI provide env vars directly.
+  }
+}
+
+function shouldUseSsl(value) {
+  try {
+    const { hostname } = new URL(value);
+    return !["localhost", "127.0.0.1", "::1"].includes(hostname);
+  } catch {
+    return true;
   }
 }

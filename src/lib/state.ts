@@ -1,5 +1,6 @@
 import { getSql } from "./db";
 import { buildBettingState } from "./betting";
+import { hydrateFuturesMarket, type FuturesMarketSeed } from "./futures";
 import { ensureGroupSchema, mapGroup } from "./groups";
 import type {
   AppState,
@@ -12,6 +13,10 @@ import type {
   BetSettlementBasis,
   Draw,
   Fixture,
+  FuturesEntry,
+  FuturesEntryResult,
+  FuturesEntryStatus,
+  FuturesMarketStatus,
   Participant,
   Pot,
   SweepstakeGroup,
@@ -103,6 +108,48 @@ type BetAcceptanceRow = {
   accepted_at: string;
 };
 
+type FuturesMarketRow = {
+  id: number;
+  pool_id: number;
+  title: string;
+  market_type: string;
+  creator_participant_id: number | null;
+  creator_name: string | null;
+  fixture_id: number | null;
+  settlement_basis: string | null;
+  rollover_target_market_id: number | null;
+  rollover_target_title: string | null;
+  auto_created: boolean;
+  open_window_note: string | null;
+  loss_rule: string | null;
+  status: string;
+  opens_at: string | null;
+  closes_at: string;
+  settled_option_id: number | null;
+  rollover_amount: string | number;
+  created_at: string;
+};
+
+type FuturesOptionRow = {
+  id: number;
+  market_id: number;
+  label: string;
+  sort_order: number;
+};
+
+type FuturesEntryRow = {
+  id: number;
+  market_id: number;
+  option_id: number;
+  participant_id: number;
+  participant_name: string;
+  amount: string | number;
+  status: string;
+  result: string;
+  payout_amount: string | number;
+  placed_at: string;
+};
+
 function toNumber(value: string | number) {
   return typeof value === "number" ? value : Number(value);
 }
@@ -173,6 +220,67 @@ export function ensureBettingTables(sql: SqlClient = getSql()) {
         accepted_at timestamptz not null default now()
       )
     `;
+    await sql`
+      create table if not exists futures_markets (
+        id serial primary key,
+        pool_id integer not null references sweepstake_groups(id) on delete cascade,
+        creator_participant_id integer references participants(id) on delete set null,
+        fixture_id integer references fixtures(id) on delete set null,
+        title text not null,
+        market_type text not null default 'generic',
+        settlement_basis text,
+        rollover_target_market_id integer references futures_markets(id),
+        auto_created boolean not null default false,
+        open_window_note text,
+        loss_rule text,
+        status text not null default 'open',
+        opens_at timestamptz,
+        closes_at timestamptz not null,
+        settled_option_id integer,
+        rollover_amount numeric(10,2) not null default 0,
+        created_at timestamptz not null default now(),
+        settled_at timestamptz
+      )
+    `;
+    await sql`
+      alter table futures_markets
+        add column if not exists creator_participant_id integer references participants(id) on delete set null,
+        add column if not exists fixture_id integer references fixtures(id) on delete set null,
+        add column if not exists settlement_basis text,
+        add column if not exists rollover_target_market_id integer references futures_markets(id),
+        add column if not exists auto_created boolean not null default false,
+        add column if not exists open_window_note text,
+        add column if not exists loss_rule text,
+        add column if not exists opens_at timestamptz
+    `;
+    await sql`
+      create table if not exists futures_options (
+        id serial primary key,
+        market_id integer not null references futures_markets(id) on delete cascade,
+        label text not null,
+        sort_order integer not null default 0,
+        unique (market_id, label)
+      )
+    `;
+    await sql`
+      create table if not exists futures_entries (
+        id serial primary key,
+        market_id integer not null references futures_markets(id) on delete cascade,
+        option_id integer not null references futures_options(id) on delete cascade,
+        participant_id integer not null references participants(id) on delete cascade,
+        amount numeric(10,2) not null,
+        status text not null default 'active',
+        result text not null default 'pending',
+        payout_amount numeric(10,2) not null default 0,
+        placed_at timestamptz not null default now()
+      )
+    `;
+    await sql`create index if not exists futures_markets_pool_id_idx on futures_markets(pool_id)`;
+    await sql`create index if not exists futures_markets_creator_participant_id_idx on futures_markets(creator_participant_id)`;
+    await sql`create index if not exists futures_markets_fixture_id_idx on futures_markets(fixture_id)`;
+    await sql`create index if not exists futures_options_market_id_idx on futures_options(market_id)`;
+    await sql`create index if not exists futures_entries_market_id_idx on futures_entries(market_id)`;
+    await sql`create index if not exists futures_entries_participant_id_idx on futures_entries(participant_id)`;
   })();
 
   return bettingSchemaReady;
@@ -269,6 +377,133 @@ async function getBetOffers(sql: SqlClient, groupId: number): Promise<BetOffer[]
   });
 }
 
+async function getFuturesMarkets(
+  sql: SqlClient,
+  groupId: number,
+  participantId: number | null
+) {
+  const [marketRows, optionRows, entryRows] = await Promise.all([
+    sql<FuturesMarketRow[]>`
+      select
+        futures_markets.id,
+        futures_markets.pool_id,
+        futures_markets.title,
+        futures_markets.market_type,
+        futures_markets.creator_participant_id,
+        creator.name as creator_name,
+        futures_markets.fixture_id,
+        futures_markets.settlement_basis,
+        futures_markets.rollover_target_market_id,
+        target.title as rollover_target_title,
+        futures_markets.auto_created,
+        futures_markets.open_window_note,
+        futures_markets.loss_rule,
+        futures_markets.status,
+        futures_markets.opens_at::text as opens_at,
+        futures_markets.closes_at::text as closes_at,
+        futures_markets.settled_option_id,
+        futures_markets.rollover_amount,
+        futures_markets.created_at::text as created_at
+      from futures_markets
+      left join futures_markets target on target.id = futures_markets.rollover_target_market_id
+      left join participants creator on creator.id = futures_markets.creator_participant_id
+      where futures_markets.pool_id = ${groupId}
+      order by
+        case futures_markets.status
+          when 'open' then 0
+          when 'closed' then 1
+          when 'settled' then 2
+          when 'rolled_over' then 3
+          else 4
+        end,
+        futures_markets.closes_at,
+        futures_markets.id
+    `,
+    sql<FuturesOptionRow[]>`
+      select o.id, o.market_id, o.label, o.sort_order
+      from futures_options o
+      join futures_markets m on m.id = o.market_id
+      where m.pool_id = ${groupId}
+      order by o.market_id, o.sort_order, o.label
+    `,
+    sql<FuturesEntryRow[]>`
+      select
+        e.id,
+        e.market_id,
+        e.option_id,
+        e.participant_id,
+        p.name as participant_name,
+        e.amount,
+        e.status,
+        e.result,
+        e.payout_amount,
+        e.placed_at::text as placed_at
+      from futures_entries e
+      join participants p on p.id = e.participant_id
+      join futures_markets m on m.id = e.market_id
+      where m.pool_id = ${groupId}
+      order by e.placed_at, e.id
+    `
+  ]);
+
+  const optionsByMarket = new Map<number, FuturesOptionRow[]>();
+  for (const option of optionRows) {
+    const options = optionsByMarket.get(option.market_id);
+    if (options) options.push(option);
+    else optionsByMarket.set(option.market_id, [option]);
+  }
+
+  const entriesByMarket = new Map<number, FuturesEntry[]>();
+  for (const row of entryRows) {
+    const entry: FuturesEntry = {
+      id: row.id,
+      marketId: row.market_id,
+      optionId: row.option_id,
+      participantId: row.participant_id,
+      participantName: row.participant_name,
+      amount: toNumber(row.amount),
+      status: row.status as FuturesEntryStatus,
+      result: row.result as FuturesEntryResult,
+      payoutAmount: toNumber(row.payout_amount),
+      placedAt: row.placed_at
+    };
+    const entries = entriesByMarket.get(row.market_id);
+    if (entries) entries.push(entry);
+    else entriesByMarket.set(row.market_id, [entry]);
+  }
+
+  return marketRows.map((market) => {
+    const seed: FuturesMarketSeed = {
+      id: market.id,
+      groupId: market.pool_id,
+      title: market.title,
+      marketType: market.market_type,
+      creatorParticipantId: market.creator_participant_id,
+      creatorName: market.creator_name,
+      fixtureId: market.fixture_id,
+      settlementBasis: market.settlement_basis as FuturesMarketSeed["settlementBasis"],
+      rolloverTarget: market.rollover_target_title,
+      autoCreated: market.auto_created,
+      closeDescription: market.open_window_note,
+      lossRule: market.loss_rule,
+      status: market.status as FuturesMarketStatus,
+      opensAt: market.opens_at,
+      closesAt: market.closes_at,
+      settledOptionId: market.settled_option_id,
+      rolloverAmount: toNumber(market.rollover_amount),
+      createdAt: market.created_at,
+      options: (optionsByMarket.get(market.id) ?? []).map((option) => ({
+        id: option.id,
+        marketId: option.market_id,
+        label: option.label,
+        sortOrder: option.sort_order
+      })),
+      entries: entriesByMarket.get(market.id) ?? []
+    };
+    return hydrateFuturesMarket(seed, participantId);
+  });
+}
+
 export function mapTeam(row: TeamRow): Team {
   return {
     id: row.id,
@@ -305,7 +540,7 @@ export async function getAppState(input?: string | null | StateOptions): Promise
   const groupId = context.group.id;
   const participant = context.participant;
 
-  const [participantRows, potRows, teamRows, drawRows, fixtureRows, betOffers] = await Promise.all([
+  const [participantRows, potRows, teamRows, drawRows, fixtureRows, betOffers, futuresMarkets] = await Promise.all([
     sql<ParticipantRow[]>`
       select id, name, pool_id as "groupId"
       from participants
@@ -384,7 +619,8 @@ export async function getAppState(input?: string | null | StateOptions): Promise
       left join participants ap on ap.id = ad.participant_id
       order by f.kickoff
     `,
-    getBetOffers(sql, groupId)
+    getBetOffers(sql, groupId),
+    getFuturesMarkets(sql, groupId, participant?.id ?? null)
   ]);
 
   const allDraws: Draw[] = drawRows.map((row) => ({
@@ -412,7 +648,7 @@ export async function getAppState(input?: string | null | StateOptions): Promise
       oddsAwayPrice: toNullableNumber(fixture.oddsAwayPrice)
     })),
     teams: teamRows.map(mapTeam),
-    betting: buildBettingState(participantRows, participant, betOffers)
+    betting: buildBettingState(participantRows, participant, betOffers, futuresMarkets)
   };
 }
 
@@ -498,6 +734,6 @@ function emptyAppState(): AppState {
     allDraws: [],
     fixtures: [],
     teams: [],
-    betting: buildBettingState([], null, [])
+    betting: buildBettingState([], null, [], [])
   };
 }

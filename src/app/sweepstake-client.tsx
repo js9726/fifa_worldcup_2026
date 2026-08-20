@@ -19,6 +19,12 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { estimateFuturesReturn } from "@/lib/futures";
+import {
+  PARTICIPANT_FUTURES_TEMPLATES,
+  buildParticipantFuturesTemplate,
+  type ParticipantFuturesEventType
+} from "@/lib/futures-event-templates";
 import type {
   AppState,
   BetAcceptance,
@@ -27,6 +33,9 @@ import type {
   BettingState,
   Draw,
   Fixture,
+  FuturesEntry,
+  FuturesMarket,
+  FuturesOption,
   Participant,
   Pot,
   SweepstakeGroup,
@@ -52,6 +61,7 @@ type SweepstakeClientProps = {
 };
 
 const BET_OFFER_DEFAULT_STAKE = 50;
+const FUTURES_DEFAULT_STAKE = 50;
 const BET_CANCEL_LOCK_HOURS = 1;
 
 type PrizePayouts = {
@@ -191,6 +201,138 @@ function formatBetAmount(amount: number) {
 function formatSignedBetAmount(amount: number) {
   if (amount === 0) return "RM0";
   return `${amount > 0 ? "+" : "-"}${formatBetAmount(amount)}`;
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDeadline(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function futuresMarketIsOpen(market: FuturesMarket) {
+  return futuresWindowStatus(market) === "open";
+}
+
+function futuresMarketIsEvent(market: FuturesMarket) {
+  return market.autoCreated || Boolean(market.creatorParticipantId) || market.marketType === "participant_event";
+}
+
+function futuresWindowStatus(market: FuturesMarket) {
+  if (market.status !== "open") return "inactive";
+  const now = Date.now();
+  if (market.opensAt && new Date(market.opensAt).getTime() > now) return "not_open";
+  if (new Date(market.closesAt).getTime() <= now) return "closed";
+  return "open";
+}
+
+function futuresStatusLabel(market: FuturesMarket) {
+  const windowStatus = futuresWindowStatus(market);
+  if (windowStatus === "not_open") return "opens soon";
+  if (windowStatus === "closed") return "closed";
+  if (market.status === "rolled_over") return "rolled over";
+  return market.status.replace("_", " ");
+}
+
+function futuresMarketTypeLabel(market: FuturesMarket) {
+  switch (market.marketType) {
+    case "match_1x2":
+      return "Match result pool";
+    case "match_advance":
+      return "Advancement pool";
+    case "stage_qualifier":
+      return "Stage qualifier pool";
+    case "participant_event":
+      return "Participant event pool";
+    case "world_cup_winner":
+      return "Destination jackpot";
+    case "golden_boot":
+      return "Player award jackpot";
+    default:
+      return market.marketType.replace(/_/g, " ");
+  }
+}
+
+function futuresSettlementLabel(market: FuturesMarket) {
+  switch (market.settlementBasis) {
+    case "ninety_minutes":
+      return "90 minutes only";
+    case "advance_winner":
+      return "Full match advancement";
+    case "full_match":
+      return "Full match result";
+    case "manual":
+      return "Admin-set final result";
+    default:
+      return "Settlement basis set by admin";
+  }
+}
+
+function futuresRolloverTarget(market: FuturesMarket) {
+  if (market.rolloverTarget) return market.rolloverTarget;
+  if (!futuresMarketIsEvent(market)) return "No rollover target";
+  return "World Cup Winner Jackpot";
+}
+
+function futuresWindowLabel(market: FuturesMarket) {
+  const status = futuresWindowStatus(market);
+  if (status === "not_open" && market.opensAt) return `Opens ${formatDeadline(market.opensAt)}`;
+  if (status === "closed" || status === "inactive") return `Closed ${formatDeadline(market.closesAt)}`;
+  return `Closes ${formatDeadline(market.closesAt)}`;
+}
+
+function futuresLossRule(market: FuturesMarket) {
+  return (
+    market.lossRule ??
+    `Wrong picks lose their stake. If nobody picks the correct option, or only part of the pot is paid, the remainder rolls into ${futuresRolloverTarget(
+      market
+    )}.`
+  );
+}
+
+function futuresEntryNet(entry: FuturesEntry) {
+  return Math.round((entry.payoutAmount - entry.amount) * 100) / 100;
+}
+
+function futuresEntryResultLabel(entry: FuturesEntry) {
+  switch (entry.result) {
+    case "pending":
+      return "Pending";
+    case "rollover":
+      return "Rolled over";
+    case "partial_win":
+      return "Partial win";
+    case "win":
+      return "Win";
+    case "loss":
+      return "Loss";
+    default:
+      return entry.result;
+  }
+}
+
+function fixtureAllowsParticipantFuture(fixture: Fixture) {
+  const kickoff = new Date(fixture.kickoff).getTime();
+  const closeAt = kickoff - 60 * 60 * 1000;
+  return (
+    fixture.homeScore === null &&
+    fixture.awayScore === null &&
+    Number.isFinite(kickoff) &&
+    kickoff > Date.now() &&
+    closeAt - Date.now() >= 8 * 60 * 60 * 1000
+  );
+}
+
+function optionLabel(options: FuturesOption[], optionId: number | null) {
+  if (optionId === null) return "No winner";
+  return options.find((option) => option.id === optionId)?.label ?? "Unknown option";
 }
 
 function marketLabel(offer: BetOffer) {
@@ -922,6 +1064,7 @@ export default function SweepstakeClient({
         <BetPoolPanel
           betting={state.betting}
           fixtures={state.fixtures}
+          teams={state.teams}
           participant={state.participant}
           demoMode={demoMode}
           token={token}
@@ -1061,6 +1204,7 @@ async function postBet(path: string, payload: Record<string, unknown>) {
 function BetPoolPanel({
   betting,
   fixtures,
+  teams,
   participant,
   demoMode,
   token,
@@ -1069,6 +1213,7 @@ function BetPoolPanel({
 }: {
   betting: BettingState;
   fixtures: Fixture[];
+  teams: Team[];
   participant: Participant | null;
   demoMode: boolean;
   token: string;
@@ -1082,6 +1227,11 @@ function BetPoolPanel({
   const settledAcceptances = betting.offers.flatMap((offer) =>
     offer.acceptances.filter((acceptance) => acceptance.status !== "pending")
   );
+  const settledFuturesEntries = betting.futuresMarkets.flatMap((market) =>
+    market.entries.filter((entry) => entry.status === "settled" || entry.result !== "pending")
+  );
+  const peerSettledVolume = settledAcceptances.reduce((total, acceptance) => total + acceptance.amount, 0);
+  const futuresSettledVolume = settledFuturesEntries.reduce((total, entry) => total + entry.amount, 0);
   const settledOffers = betting.offers
     .filter((offer) => offer.acceptances.some((acceptance) => acceptance.status !== "pending"))
     .sort((a, b) => {
@@ -1110,19 +1260,33 @@ function BetPoolPanel({
           <p className="eyebrow">Bet Pool</p>
           <h2>Private ledger leaderboard</h2>
           <p>
-            Ranked by settled net profit only. Open exposure is shown separately and does not
-            change the table order.
+            Ranked by settled net profit from peer bets and futures pools. Open exposure is shown separately
+            and does not change the table order.
           </p>
         </div>
         <div className="bet-summary-card">
           <span>Settled volume</span>
-          <strong>{formatBetAmount(betting.leaderboard.reduce((total, row) => total + row.settledVolume, 0) / 2)}</strong>
-          <em>{settledAcceptances.length} settled slips</em>
+          <strong>{formatBetAmount(peerSettledVolume + futuresSettledVolume)}</strong>
+          <em>
+            {settledAcceptances.length} slips / {settledFuturesEntries.length} futures
+          </em>
         </div>
       </div>
 
       <CreateOfferForm
         fixtures={fixtures}
+        canBet={canBet}
+        demoMode={demoMode}
+        token={token}
+        refresh={refresh}
+        notify={notify}
+      />
+
+      <FuturesPoolsPanel
+        markets={betting.futuresMarkets}
+        fixtures={fixtures}
+        teams={teams}
+        participant={participant}
         canBet={canBet}
         demoMode={demoMode}
         token={token}
@@ -1232,6 +1396,598 @@ function BetPoolPanel({
   );
 }
 
+function FuturesPoolsPanel({
+  markets,
+  fixtures,
+  teams,
+  participant,
+  canBet,
+  demoMode,
+  token,
+  refresh,
+  notify
+}: {
+  markets: FuturesMarket[];
+  fixtures: Fixture[];
+  teams: Team[];
+  participant: Participant | null;
+  canBet: boolean;
+  demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
+}) {
+  const eventMarkets = markets.filter(futuresMarketIsEvent);
+  const jackpotMarkets = markets.filter((market) => !futuresMarketIsEvent(market));
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [jackpotsOpen, setJackpotsOpen] = useState(true);
+  const openCount = markets.filter(futuresMarketIsOpen).length;
+  const participantEventCount = eventMarkets.filter((market) => market.creatorParticipantId).length;
+  const rolloverTotal = markets.reduce((total, market) => total + market.rolloverAmount, 0);
+  const rolledOverTotal = markets
+    .filter((market) => market.status === "rolled_over")
+    .reduce((total, market) => total + market.totalPot, 0);
+
+  return (
+    <section className="futures-panel">
+      <div className="bet-section-heading">
+        <div>
+          <p className="eyebrow">Futures Pools</p>
+          <h2>Event pools feeding jackpot</h2>
+        </div>
+        <span>{openCount} open</span>
+      </div>
+      <div className="futures-summary-strip">
+        <div>
+          <span>Total futures pot</span>
+          <strong>{formatBetAmount(markets.reduce((total, market) => total + market.totalPot, 0))}</strong>
+        </div>
+        <div>
+          <span>Rollover in jackpots</span>
+          <strong>{formatBetAmount(rolloverTotal)}</strong>
+        </div>
+        <div>
+          <span>Player event pools</span>
+          <strong>{participantEventCount}</strong>
+        </div>
+        <div>
+          <span>Pending rollovers</span>
+          <strong>{formatBetAmount(rolledOverTotal)}</strong>
+        </div>
+        <div>
+          <span>My futures entries</span>
+          <strong>{participant ? markets.reduce((total, market) => total + market.myEntries.length, 0) : 0}</strong>
+        </div>
+      </div>
+
+      <CreateFuturesEventForm
+        fixtures={fixtures}
+        teams={teams}
+        canBet={canBet}
+        demoMode={demoMode}
+        token={token}
+        refresh={refresh}
+        notify={notify}
+      />
+
+      <div className="futures-bucket">
+        <button
+          className="futures-bucket-toggle"
+          type="button"
+          aria-expanded={eventsOpen}
+          onClick={() => setEventsOpen((open) => !open)}
+        >
+          <span>Event pools</span>
+          <strong>
+            {eventMarkets.length} pools / {eventMarkets.filter(futuresMarketIsOpen).length} open
+          </strong>
+          {eventsOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        </button>
+        <p className="futures-bucket-note">
+          Auto and participant-created event pools live here. No-winner pools and unpaid partial-win balances roll into
+          the World Cup Winner Jackpot.
+        </p>
+        {eventsOpen && (
+          <FuturesMarketGrid
+            markets={eventMarkets}
+            canBet={canBet}
+            demoMode={demoMode}
+            token={token}
+            refresh={refresh}
+            notify={notify}
+          />
+        )}
+      </div>
+
+      <div className="futures-bucket">
+        <button
+          className="futures-bucket-toggle"
+          type="button"
+          aria-expanded={jackpotsOpen}
+          onClick={() => setJackpotsOpen((open) => !open)}
+        >
+          <span>Final jackpot</span>
+          <strong>{jackpotMarkets.length} pool</strong>
+          {jackpotsOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        </button>
+        <p className="futures-bucket-note">
+          Rollover money belongs to this sweepstake group futures jackpot. It does not change the normal champion,
+          runner-up, or wooden spoon prizes.
+        </p>
+        {jackpotsOpen && (
+          <FuturesMarketGrid
+            markets={jackpotMarkets}
+            canBet={canBet}
+            demoMode={demoMode}
+            token={token}
+            refresh={refresh}
+            notify={notify}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function CreateFuturesEventForm({
+  fixtures,
+  teams,
+  canBet,
+  demoMode,
+  token,
+  refresh,
+  notify
+}: {
+  fixtures: Fixture[];
+  teams: Team[];
+  canBet: boolean;
+  demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
+}) {
+  const eligibleFixtures = useMemo(
+    () =>
+      fixtures
+        .filter(fixtureAllowsParticipantFuture)
+        .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()),
+    [fixtures]
+  );
+  const [open, setOpen] = useState(false);
+  const [fixtureId, setFixtureId] = useState<number | null>(null);
+  const [eventType, setEventType] = useState<ParticipantFuturesEventType>("match_result_90");
+  const [coldCountry, setColdCountry] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const selectedFixture = eligibleFixtures.find((fixture) => fixture.id === fixtureId) ?? null;
+  const activeTeams = useMemo(
+    () =>
+      teams
+        .filter((team) => team.finalRank === null && !team.eliminatedStage)
+        .sort((a, b) => a.winRate - b.winRate || b.fifaRank - a.fifaRank || a.country.localeCompare(b.country)),
+    [teams]
+  );
+  const coldOptions = useMemo(
+    () =>
+      activeTeams.filter(
+        (team) => team.country !== selectedFixture?.homeCountry && team.country !== selectedFixture?.awayCountry
+      ),
+    [activeTeams, selectedFixture]
+  );
+  const selectedTemplate =
+    PARTICIPANT_FUTURES_TEMPLATES.find((template) => template.type === eventType) ??
+    PARTICIPANT_FUTURES_TEMPLATES[0];
+  const generated =
+    selectedFixture &&
+    buildParticipantFuturesTemplate({
+      type: eventType,
+      homeCountry: selectedFixture.homeCountry,
+      awayCountry: selectedFixture.awayCountry,
+      coldCountry
+    });
+
+  useEffect(() => {
+    if (!selectedFixture && eligibleFixtures.length) {
+      setFixtureId(eligibleFixtures[0].id);
+    }
+  }, [eligibleFixtures, selectedFixture]);
+
+  useEffect(() => {
+    if (!selectedFixture) return;
+    if (selectedTemplate.needsColdOption) {
+      const nextCold = coldOptions.find((team) => team.country === coldCountry)?.country ?? coldOptions[0]?.country ?? "";
+      setColdCountry(nextCold);
+    }
+  }, [coldCountry, coldOptions, selectedFixture, selectedTemplate.needsColdOption]);
+
+  function changeEventType(nextType: ParticipantFuturesEventType) {
+    setEventType(nextType);
+    const nextTemplate =
+      PARTICIPANT_FUTURES_TEMPLATES.find((template) => template.type === nextType) ?? PARTICIPANT_FUTURES_TEMPLATES[0];
+    if (nextTemplate.needsColdOption) {
+      setColdCountry((current) => coldOptions.find((team) => team.country === current)?.country ?? coldOptions[0]?.country ?? "");
+    }
+  }
+
+  async function submit() {
+    if (!selectedFixture) {
+      notify("Choose an eligible fixture.");
+      return;
+    }
+    if (selectedTemplate.needsColdOption && !coldCountry) {
+      notify("Choose a cold option country.");
+      return;
+    }
+
+    setSubmitting(true);
+    notify("Creating event pool...");
+    const { ok, error } = await postBet("/api/bet/futures/market", {
+      token,
+      fixtureId: selectedFixture.id,
+      eventType,
+      coldCountry: selectedTemplate.needsColdOption ? coldCountry : null
+    });
+    setSubmitting(false);
+
+    if (!ok) {
+      notify(error ?? "Could not create event pool.");
+      return;
+    }
+
+    notify("Event pool created. Entries are locked once placed.");
+    setOpen(false);
+    await refresh();
+  }
+
+  if (!canBet && !demoMode) {
+    return (
+      <div className="futures-create">
+        <div className="bet-create-head">
+          <div>
+            <p className="eyebrow">Create event pool</p>
+            <h2>Invite users only</h2>
+          </div>
+        </div>
+        <p className="empty">Open your personal invite link to create event pools.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="futures-create">
+      <div className="bet-create-head">
+        <div>
+          <p className="eyebrow">Create event pool</p>
+          <h2>Player-created futures</h2>
+        </div>
+        <button className="bet-action gold" type="button" onClick={() => setOpen((value) => !value)}>
+          <Sparkles aria-hidden="true" />
+          <span>{open ? "Close" : "New event"}</span>
+        </button>
+      </div>
+
+      {open &&
+        (eligibleFixtures.length ? (
+          <div className="bet-create-form futures-create-form">
+            <label>
+              <span>Fixture</span>
+              <select value={fixtureId ?? ""} onChange={(event) => setFixtureId(Number(event.target.value))}>
+                {eligibleFixtures.map((fixture) => (
+                  <option key={fixture.id} value={fixture.id}>
+                    {fixture.homeCountry} vs {fixture.awayCountry} -{" "}
+                    {new Intl.DateTimeFormat("en-GB", {
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit"
+                    }).format(new Date(fixture.kickoff))}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="futures-create-title">
+              <span>Event type</span>
+              <select value={eventType} onChange={(event) => changeEventType(event.target.value as ParticipantFuturesEventType)}>
+                {PARTICIPANT_FUTURES_TEMPLATES.map((template) => (
+                  <option key={template.type} value={template.type}>
+                    {template.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedTemplate.needsColdOption && (
+              <label>
+                <span>Cold option</span>
+                <select value={coldCountry} onChange={(event) => setColdCountry(event.target.value)}>
+                  {coldOptions.map((team) => (
+                    <option key={team.id} value={team.country}>
+                      {team.country} - {formatPercent(team.winRate)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <div className="futures-generated-options">
+              <span>Generated pool</span>
+              <strong>{generated ? generated.title : "Choose a fixture"}</strong>
+              <p>{selectedTemplate.help}</p>
+              <div>
+                {(generated?.options ?? []).map((option) => (
+                  <em key={option}>{option}</em>
+                ))}
+              </div>
+            </div>
+
+            <div className="futures-create-rule">
+              <span>Window</span>
+              <strong>8h entry time + closes 1h before kickoff</strong>
+              <em>{generated?.options.length ?? 0} options</em>
+            </div>
+
+            <button
+              className="bet-action gold"
+              type="button"
+              onClick={submit}
+              disabled={demoMode || !canBet || submitting}
+            >
+              {submitting ? "Creating..." : demoMode ? "Demo preview" : "Create pool"}
+            </button>
+          </div>
+        ) : (
+          <p className="empty">No fixture is far enough away for an 8-hour entry window right now.</p>
+        ))}
+    </div>
+  );
+}
+
+function FuturesMarketGrid({
+  markets,
+  canBet,
+  demoMode,
+  token,
+  refresh,
+  notify
+}: {
+  markets: FuturesMarket[];
+  canBet: boolean;
+  demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
+}) {
+  return (
+    <div className="futures-grid">
+      {markets.length ? (
+        markets.map((market) => (
+          <FuturesMarketCard
+            key={market.id}
+            market={market}
+            canBet={canBet}
+            demoMode={demoMode}
+            token={token}
+            refresh={refresh}
+            notify={notify}
+          />
+        ))
+      ) : (
+        <p className="empty">No pools in this section yet.</p>
+      )}
+    </div>
+  );
+}
+
+function FuturesMarketCard({
+  market,
+  canBet,
+  demoMode,
+  token,
+  refresh,
+  notify
+}: {
+  market: FuturesMarket;
+  canBet: boolean;
+  demoMode: boolean;
+  token: string;
+  refresh: () => Promise<void> | void;
+  notify: (message: string) => void;
+}) {
+  const [selectedOptionId, setSelectedOptionId] = useState(market.options[0]?.id ?? 0);
+  const [stake, setStake] = useState(FUTURES_DEFAULT_STAKE);
+  const [entering, setEntering] = useState(false);
+  const selectedOption = market.options.find((option) => option.id === selectedOptionId) ?? market.options[0] ?? null;
+  const open = futuresMarketIsOpen(market);
+  const rolloverTarget = futuresRolloverTarget(market);
+  const lossRule = futuresLossRule(market);
+  const isEventMarket = futuresMarketIsEvent(market);
+  const estimatedReturn = selectedOption
+    ? estimateFuturesReturn({
+        stake,
+        optionStake: selectedOption.totalStake,
+        totalPot: market.totalPot
+      })
+    : 0;
+  const winnerLabel = optionLabel(market.options, market.settledOptionId);
+
+  async function enterPool() {
+    if (!selectedOption) {
+      notify("Pick an option first.");
+      return;
+    }
+    if (!(stake > 0)) {
+      notify("Enter a stake greater than zero.");
+      return;
+    }
+
+    setEntering(true);
+    notify(`Locking ${formatBetAmount(stake)} on ${selectedOption.label}...`);
+    const { ok, error } = await postBet("/api/bet/futures/entry", {
+      token,
+      marketId: market.id,
+      optionId: selectedOption.id,
+      amount: stake
+    });
+    setEntering(false);
+
+    if (!ok) {
+      notify(error ?? "Could not place futures entry.");
+      return;
+    }
+
+    notify(`Entry locked on ${selectedOption.label}.`);
+    setStake(FUTURES_DEFAULT_STAKE);
+    await refresh();
+  }
+
+  return (
+    <article className="futures-card">
+      <header>
+        <div>
+          <p className="eyebrow">{futuresMarketTypeLabel(market)}</p>
+          <h3>{market.title}</h3>
+        </div>
+        <span className={clsx("bet-status", market.status)}>{futuresStatusLabel(market)}</span>
+      </header>
+
+      <div className="futures-metrics">
+        <div>
+          <span>Current pot</span>
+          <strong>{formatBetAmount(market.totalPot)}</strong>
+        </div>
+        <div>
+          <span>Bet window</span>
+          <strong>{futuresWindowLabel(market)}</strong>
+        </div>
+        <div>
+          <span>Entries</span>
+          <strong>
+            {market.entryCount} / {market.uniqueParticipantCount}
+          </strong>
+        </div>
+        <div>
+          <span>Rollover in</span>
+          <strong>{formatBetAmount(market.rolloverAmount)}</strong>
+        </div>
+      </div>
+
+      <div className="futures-rules">
+        <span>
+          {market.creatorName ? `Created by ${market.creatorName}` : market.autoCreated ? "Auto-created event" : "Admin jackpot"}
+        </span>
+        <span>{futuresSettlementLabel(market)}</span>
+        <span>{market.closeDescription ?? "Deadline enforced before settlement."}</span>
+        <span>{isEventMarket ? `Rollover target: ${rolloverTarget}` : "Receives failed event rollovers"}</span>
+      </div>
+
+      <p className="futures-loss-warning">{lossRule}</p>
+
+      <div className="futures-options">
+        {market.options.map((option) => (
+          <button
+            className={clsx("futures-option", selectedOptionId === option.id && "selected")}
+            type="button"
+            key={option.id}
+            onClick={() => setSelectedOptionId(option.id)}
+          >
+            <span className="futures-option-title">
+              <strong>{option.label}</strong>
+              <em>{formatPercent(option.poolShare)}</em>
+            </span>
+            <span className="futures-option-stats">
+              <span>
+                <small>Staked</small>
+                <strong>{formatBetAmount(option.totalStake)}</strong>
+              </span>
+              <span>
+                <small>Entries</small>
+                <strong>{option.entryCount}</strong>
+              </span>
+            </span>
+            <span className="futures-option-returns">
+              <span>
+                RM10
+                <strong>{formatBetAmount(option.estimatedReturnFor10)}</strong>
+              </span>
+              <span>
+                RM50
+                <strong>{formatBetAmount(option.estimatedReturnFor50)}</strong>
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {market.status === "settled" ? (
+        <p className="futures-note">
+          Settled winner: {winnerLabel}. Any unpaid partial-win balance rolls into {rolloverTarget}.
+        </p>
+      ) : market.status === "rolled_over" ? (
+        <p className="futures-note">
+          Nobody backed {winnerLabel}. Everyone in this pool lost, and {formatBetAmount(market.totalPot)} rolls into{" "}
+          {rolloverTarget}.
+        </p>
+      ) : (
+        <div className="futures-entry">
+          <label>
+            <span>Stake (RM)</span>
+            <input
+              type="number"
+              min={1}
+              step={10}
+              value={stake || ""}
+              onChange={(event) => setStake(Number(event.target.value))}
+            />
+          </label>
+          <div>
+            <span>If {selectedOption?.label ?? "this option"} wins now</span>
+            <strong>{formatBetAmount(estimatedReturn)}</strong>
+          </div>
+          <button
+            className="bet-action gold"
+            type="button"
+            onClick={enterPool}
+            disabled={!open || !canBet || demoMode || entering}
+          >
+            {entering
+              ? "Locking..."
+              : demoMode
+                ? "Demo preview"
+                : !canBet
+                  ? "Invite link required"
+                  : open
+                    ? "Lock entry"
+                    : futuresWindowStatus(market) === "not_open"
+                      ? "Window not open"
+                      : "Deadline closed"}
+          </button>
+          <p>Entries cannot be cancelled once placed. {lossRule}</p>
+        </div>
+      )}
+
+      {market.myEntries.length > 0 && (
+        <div className="futures-my-entries">
+          <span>My entries</span>
+          {market.myEntries.map((entry) => {
+            const net = futuresEntryNet(entry);
+            return (
+              <div key={entry.id}>
+                <strong>{optionLabel(market.options, entry.optionId)}</strong>
+                <span>{formatBetAmount(entry.amount)}</span>
+                <em className={clsx(net > 0 && "positive", net < 0 && "negative")}>
+                  {entry.result === "pending" || entry.result === "rollover"
+                    ? futuresEntryResultLabel(entry)
+                    : `${futuresEntryResultLabel(entry)} ${formatSignedBetAmount(net)}`}
+                </em>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </article>
+  );
+}
+
 function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
   return (
     <div className="bet-leaderboard">
@@ -1242,6 +1998,7 @@ function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
         <span>W / L / V</span>
         <span>Volume</span>
         <span>Open exposure</span>
+        <span>Futures</span>
         <span>Open</span>
       </div>
       {rows.map((row) => (
@@ -1256,6 +2013,16 @@ function BetLeaderboard({ rows }: { rows: BetLeaderboardRow[] }) {
           </span>
           <span>{formatBetAmount(row.settledVolume)}</span>
           <span>{formatBetAmount(row.openExposure)}</span>
+          <span className="leaderboard-futures">
+            <em className={clsx(row.futuresSettledNet > 0 && "positive", row.futuresSettledNet < 0 && "negative")}>
+              {formatSignedBetAmount(row.futuresSettledNet)}
+            </em>
+            <small>
+              {row.futuresWins}W / {row.futuresLosses}L
+              {row.futuresRolloverLosses ? ` / ${row.futuresRolloverLosses} roll` : ""}
+              {row.futuresOpenExposure ? ` / ${formatBetAmount(row.futuresOpenExposure)} open` : ""}
+            </small>
+          </span>
           <span>
             {row.openOffers} / {row.activeAccepts}
           </span>

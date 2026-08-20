@@ -838,10 +838,10 @@ button {
 .bet-table-header,
 .bet-table-row {
   display: grid;
-  grid-template-columns: 60px minmax(120px, 1fr) 120px 110px 110px 140px 90px;
+  grid-template-columns: 60px minmax(120px, 1fr) 120px 110px 110px 140px minmax(150px, 1fr) 90px;
   gap: 10px;
   align-items: center;
-  min-width: 820px;
+  min-width: 990px;
   padding: 12px 14px;
 }
 
@@ -876,6 +876,19 @@ button {
 .bet-table-row em {
   font-style: normal;
   font-weight: 950;
+}
+
+.leaderboard-futures {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.leaderboard-futures small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.25;
 }
 
 .bet-offer-grid,
@@ -920,9 +933,428 @@ button {
 }
 
 .bet-status.settled,
+.bet-status.rolled_over,
 .bet-status.void {
   color: #713f12;
   background: #fde68a;
+}
+
+.futures-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.futures-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.futures-summary-strip div,
+.futures-card,
+.futures-entry > div,
+.futures-entry label,
+.futures-my-entries,
+.futures-create,
+.futures-create-rule,
+.futures-generated-options {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.futures-summary-strip div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.futures-summary-strip span,
+.futures-metrics span,
+.futures-entry span,
+.futures-my-entries > span,
+.futures-create-rule span,
+.futures-generated-options > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.futures-summary-strip strong,
+.futures-metrics strong,
+.futures-entry strong,
+.futures-create-rule strong,
+.futures-generated-options strong {
+  color: var(--gold);
+}
+
+.futures-create {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--panel) 94%, var(--gold) 6%);
+}
+
+.futures-create .bet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.futures-create .bet-action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.futures-create-form {
+  align-items: stretch;
+}
+
+.futures-create-title {
+  grid-column: span 2;
+}
+
+.futures-create-options,
+.futures-generated-options {
+  grid-column: 1 / -1;
+}
+
+.futures-create-options textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--field);
+  font: inherit;
+  font-weight: 650;
+  resize: vertical;
+}
+
+.futures-create-rule {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+}
+
+.futures-generated-options {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.futures-generated-options p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.futures-generated-options div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.futures-generated-options em {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--text);
+  background: var(--row);
+  font-size: 0.82rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.futures-create-rule em {
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 850;
+}
+
+.futures-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.futures-bucket {
+  display: grid;
+  gap: 8px;
+}
+
+.futures-bucket-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 22px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-2) 86%, var(--gold) 14%);
+  text-align: left;
+}
+
+.futures-bucket-toggle span {
+  font-size: 1rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.futures-bucket-toggle strong {
+  color: var(--gold);
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.futures-bucket-toggle svg {
+  width: 18px;
+  height: 18px;
+  color: var(--gold);
+}
+
+.futures-bucket-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.futures-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--gold) 8%);
+}
+
+.futures-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.futures-card h3 {
+  margin: 0;
+}
+
+.futures-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.futures-metrics div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--row);
+}
+
+.futures-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.futures-rules span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--row);
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.futures-loss-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--red) 38%, var(--line) 62%);
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--red) 72%, var(--text) 28%);
+  background: color-mix(in srgb, var(--panel) 82%, var(--red) 18%);
+  font-size: 0.88rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.futures-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 10px;
+}
+
+.futures-option {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--row);
+  text-align: left;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.futures-option:hover {
+  border-color: var(--line-strong);
+}
+
+.futures-option.selected {
+  border-color: var(--gold);
+  background: color-mix(in srgb, var(--row) 78%, var(--gold) 22%);
+}
+
+.futures-option-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.futures-option-title strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.futures-option-title em {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--gold);
+  background: color-mix(in srgb, var(--panel) 84%, var(--gold) 16%);
+  font-size: 0.78rem;
+}
+
+.futures-option-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.futures-option-stats > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.futures-option-stats small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.futures-option-stats strong,
+.futures-option-returns strong {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 950;
+}
+
+.futures-option-returns {
+  display: grid;
+  gap: 5px;
+}
+
+.futures-option-returns span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.futures-option em,
+.futures-my-entries strong,
+.futures-my-entries em {
+  font-style: normal;
+  font-weight: 900;
+}
+
+.futures-note,
+.futures-entry p,
+.futures-my-entries span {
+  color: var(--muted);
+}
+
+.futures-entry {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) minmax(210px, 1fr) minmax(120px, auto);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.futures-entry label,
+.futures-entry > div {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.futures-entry input {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--field);
+  font-weight: 700;
+}
+
+.futures-entry p,
+.futures-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.futures-my-entries {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.futures-my-entries div {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 90px minmax(110px, auto);
+  gap: 8px;
+  align-items: center;
 }
 
 .bet-fixture,
@@ -1076,6 +1508,7 @@ button {
 
 .bet-create-form select:focus-visible,
 .bet-create-form input:focus-visible,
+.bet-create-form textarea:focus-visible,
 .bet-accept-row input:focus-visible {
   outline: none;
   border-color: var(--gold);
@@ -1750,6 +2183,145 @@ button {
   .bet-create-head,
   .bet-offer-card header {
     flex-wrap: wrap;
+  }
+
+  .futures-summary-strip,
+  .futures-grid,
+  .futures-metrics,
+  .futures-options,
+  .futures-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .futures-card header {
+    flex-wrap: wrap;
+  }
+
+  .futures-option {
+    min-height: 0;
+  }
+
+  .futures-option-title {
+    align-items: center;
+  }
+
+  .futures-bucket-toggle {
+    grid-template-columns: 1fr auto;
+  }
+
+  .futures-bucket-toggle strong {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .futures-bucket-toggle svg {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .futures-my-entries div {
+    grid-template-columns: 1fr auto;
+  }
+
+  .futures-my-entries div em {
+    grid-column: 1 / -1;
+  }
+
+  .futures-create-title,
+  .futures-create-options,
+  .futures-generated-options {
+    grid-column: 1;
+  }
+
+  .bet-leaderboard {
+    overflow-x: visible;
+  }
+
+  .bet-table-header {
+    display: none;
+  }
+
+  .bet-table-row {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    min-width: 0;
+    row-gap: 6px;
+  }
+
+  .bet-table-row > :nth-child(1) {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .bet-table-row > :nth-child(2) {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: 950;
+  }
+
+  .bet-table-row > :nth-child(3) {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .bet-table-row > :nth-child(4),
+  .bet-table-row > :nth-child(5),
+  .bet-table-row > :nth-child(6),
+  .bet-table-row > :nth-child(7),
+  .bet-table-row > :nth-child(8) {
+    grid-column: 2 / -1;
+    min-width: 0;
+    color: var(--muted);
+  }
+
+  .bet-table-row > :nth-child(4) {
+    grid-row: 2;
+  }
+
+  .bet-table-row > :nth-child(5) {
+    grid-row: 3;
+  }
+
+  .bet-table-row > :nth-child(6) {
+    grid-row: 4;
+  }
+
+  .bet-table-row > :nth-child(7) {
+    grid-row: 5;
+  }
+
+  .bet-table-row > :nth-child(8) {
+    grid-row: 6;
+  }
+
+  .bet-table-row > :nth-child(4)::before {
+    content: "Record ";
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .bet-table-row > :nth-child(5)::before {
+    content: "Volume ";
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .bet-table-row > :nth-child(6)::before {
+    content: "Open exposure ";
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .bet-table-row > :nth-child(7)::before {
+    content: "Futures ";
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .bet-table-row > :nth-child(8)::before {
+    content: "Open ";
+    color: var(--text);
+    font-weight: 900;
   }
 
   /* Bet form: one comfortable column on phones. */
